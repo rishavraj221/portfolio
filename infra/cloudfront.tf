@@ -58,11 +58,17 @@ resource "aws_cloudfront_distribution" "site" {
     }
   }
 
-  # Extensionless project pages, e.g. /projects/kureita, are not something
-  # this site uses today, but a bad path should land on a real 404 rather
-  # than CloudFront's XML error page.
+  # A missing key behind a private OAC bucket comes back from S3 as 403,
+  # not 404 (S3 won't reveal whether a forbidden key exists), so both need
+  # to map to the actual 404 page rather than CloudFront's XML error page.
   custom_error_response {
     error_code         = 404
+    response_code      = 404
+    response_page_path = "/404.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
     response_code      = 404
     response_page_path = "/404.html"
   }

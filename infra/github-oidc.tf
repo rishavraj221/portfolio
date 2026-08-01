@@ -3,7 +3,11 @@
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  # Fingerprint of the root CA at the top of token.actions.githubusercontent.com's
+  # current TLS chain (Let's Encrypt / ISRG Root X1). AWS only checks this at
+  # provider creation time, but it has to be correct then or every
+  # AssumeRoleWithWebIdentity call fails with "Not authorized".
+  thumbprint_list = ["ab9d0263244dd0326eb67015705a667e79cfe998"]
 }
 
 data "aws_iam_policy_document" "github_trust" {
@@ -24,10 +28,15 @@ data "aws_iam_policy_document" "github_trust" {
 
     # Only workflow runs triggered from this exact repo's main branch can
     # assume this role, not PRs, not forks, not other repos.
+    #
+    # StringLike rather than StringEquals: this account has GitHub's
+    # "immutable OIDC subject claims" setting on, so the actual sub is
+    # "repo:OWNER@ID/REPO@ID:ref:refs/heads/main", not the plain
+    # "repo:OWNER/REPO:..." format most examples assume.
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/main"]
+      values   = ["repo:${var.github_owner}*/${var.github_repo}*:ref:refs/heads/main"]
     }
   }
 }
