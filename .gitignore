@@ -3,6 +3,9 @@ secret.csv
 *.env
 .env.*
 
+# job applications, kept local
+coverletter/
+
 # OS
 .DS_Store
 
