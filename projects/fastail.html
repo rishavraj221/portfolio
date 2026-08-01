@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Reels Feed You Can Order From | Rishav Raj</title>
+<meta name="description" content="A social commerce app for local brands. Serviceability decides the feed before engagement does, and food orders land in the restaurant's own POS.">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<link rel="manifest" href="../site.webmanifest">
+<link rel="stylesheet" href="../style.css">
+
+<link rel="canonical" href="https://rishavraj.info/projects/fastail.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Rishav Raj">
+<meta property="og:title" content="A Reels Feed You Can Order From | Rishav Raj">
+<meta property="og:description" content="A social commerce app for local brands. Serviceability decides the feed before engagement does, and food orders land in the restaurant's own POS.">
+<meta property="og:url" content="https://rishavraj.info/projects/fastail.html">
+<meta property="og:image" content="https://rishavraj.info/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="A Reels Feed You Can Order From | Rishav Raj">
+<meta name="twitter:description" content="A social commerce app for local brands. Serviceability decides the feed before engagement does, and food orders land in the restaurant's own POS.">
+<meta name="twitter:image" content="https://rishavraj.info/og-image.png">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="../index.html">Rishav Raj</a>
+
+  <h1 class="title">A reels feed you can order from</h1>
+  <p class="standfirst">
+    Fastail was a social commerce app for local shops and restaurants. You scroll short
+    videos, and when you want what is in one you order it without leaving the feed.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">Where</div><div class="v">Fastail</div></div>
+    <div class="row"><div class="k">Team</div><div class="v">Two engineers. I led the system design and built most of the frontend, working from a designer's Figma.</div></div>
+  </div>
+
+  <hr>
+
+  <h2>Worked on</h2>
+  <ul class="toc">
+    <li><a href="#feed">The feed rule</a></li>
+    <li><a href="#video">Video, and why we bought it</a></li>
+    <li><a href="#services">The services</a></li>
+    <li><a href="#petpooja">Orders and the Petpooja bridge</a></li>
+    <li><a href="#data">Data model</a></li>
+    <li><a href="#deploy">Deployment</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="what">What it is</h2>
+  <p>
+    Two sides. Local brands, restaurants and bakeries and small retail, post short videos
+    of what they sell. Consumers scroll those videos and order from them directly. There
+    were two of us building it, and we both worked across the stack and split whatever
+    needed doing.
+  </p>
+
+  <h2 id="feed">The feed rule</h2>
+  <p>
+    The ranking problem here is not the same as a normal short video app. A reel is only
+    worth a slot if the brand behind it can actually serve you. A good biryani video from
+    a kitchen that does not deliver to your area is a wasted impression and an annoyed
+    user.
+  </p>
+  <p>
+    So serviceability is decided before ranking. Each brand stores its delivery area as a
+    GeoJSON polygon with a 2dsphere index, and a feed request finds the brands covering
+    the user's point before it looks at any engagement numbers.
+  </p>
+  <p>
+    Running that geo query on every request was wasteful, because two people standing on
+    the same street get the same answer. We rounded the user location to a grid cell of
+    roughly a kilometre and cached the serviceable brand list against the cell. Most
+    requests start from a cache hit, and the geo query only runs when a cell is cold or a
+    brand changes its area.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 380" role="img"
+         aria-label="A feed request rounds the user location to a grid cell, looks up cached serviceable brands, falls back to a geospatial query on a cache miss, then ranks the reels from those brands.">
+      <defs>
+        <marker id="f1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="170" y="8" width="300" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">Feed request, with the user's location</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#f1)"/>
+
+      <rect class="b-a" x="170" y="66" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="88" text-anchor="middle">Round the location to a ~1 km cell</text>
+      <text class="m" x="320" y="104" text-anchor="middle">cell = geohash(lat, lng)</text>
+      <path class="ar" d="M320 110 L320 128" marker-end="url(#f1)"/>
+
+      <rect class="b-a" x="170" y="130" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="152" text-anchor="middle">Serviceable brands, cached per cell</text>
+      <text class="m" x="320" y="168" text-anchor="middle">cell -&gt; [brandId]</text>
+
+      <path class="ar" d="M470 152 L508 152" marker-end="url(#f1)"/>
+      <rect class="b" x="510" y="134" width="126" height="36" rx="6"/>
+      <text class="s" x="573" y="151" text-anchor="middle">hit, skip</text>
+      <text class="s" x="573" y="165" text-anchor="middle">the geo query</text>
+
+      <path class="ar" d="M320 174 L320 194" marker-end="url(#f1)"/>
+      <text class="l" x="328" y="188">miss</text>
+
+      <rect class="b" x="170" y="196" width="300" height="46" rx="6"/>
+      <text class="m" x="320" y="218" text-anchor="middle">$geoNear on serviceArea</text>
+      <text class="s" x="320" y="234" text-anchor="middle">2dsphere index on the polygon</text>
+      <path class="ar" d="M320 242 L320 260" marker-end="url(#f1)"/>
+
+      <rect class="b-a" x="170" y="262" width="300" height="46" rx="6"/>
+      <text class="t" x="320" y="284" text-anchor="middle">Rank the reels from those brands</text>
+      <text class="s" x="320" y="300" text-anchor="middle">orders per view, likes, watch time, recency</text>
+      <path class="ar" d="M320 308 L320 326" marker-end="url(#f1)"/>
+
+      <rect class="b" x="200" y="328" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="352" text-anchor="middle">A page of the feed</text>
+    </svg>
+    <figcaption>Serviceability narrows the candidate set first. Engagement only decides the order within it.</figcaption>
+  </figure>
+
+  <p>
+    Within that set the order comes from engagement, with a decay so older reels fall
+    away. The signal we ended up weighting highest was orders per view rather than likes.
+    A reel can collect plenty of likes and sell nothing, which makes it entertainment, and
+    a reel with modest likes that converts is the thing working. Likes and watch through
+    still count, they just count for less.
+  </p>
+
+  <h2 id="video">Video, and why we bought it</h2>
+  <p>
+    We used Cloudinary instead of building a transcoding pipeline. With two engineers,
+    running ffmpeg workers, a bitrate ladder, packaging and a CDN was not a good use of
+    the time we had, and none of it would have been a reason anyone picked the app.
+  </p>
+  <p>
+    Uploads do not pass through our backend. The API mints a signed upload preset and the
+    brand's browser sends the file straight to Cloudinary, which matters on Lambda where
+    the request payload limit is small and a video is not. Cloudinary transcodes, cuts the
+    thumbnail, and calls a webhook when the derived versions are ready. Only then does the
+    reel become eligible for the feed, so nobody scrolls onto a video that is still
+    processing.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 316" role="img"
+         aria-label="A brand picks a video, the API returns a signed upload preset, the browser uploads straight to Cloudinary, Cloudinary transcodes, and a webhook marks the reel ready for the feed.">
+      <defs>
+        <marker id="f2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="170" y="8" width="300" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">Brand picks a video</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#f2)"/>
+
+      <rect class="b-a" x="170" y="66" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="88" text-anchor="middle">API returns a signed upload preset</text>
+      <text class="s" x="320" y="104" text-anchor="middle">no file touches our backend</text>
+      <path class="ar" d="M320 110 L320 128" marker-end="url(#f2)"/>
+
+      <rect class="b" x="170" y="130" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="152" text-anchor="middle">Browser uploads straight to Cloudinary</text>
+      <text class="s" x="320" y="168" text-anchor="middle">past the Lambda payload limit</text>
+      <path class="ar" d="M320 174 L320 192" marker-end="url(#f2)"/>
+
+      <rect class="b-a" x="170" y="194" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="216" text-anchor="middle">Cloudinary transcodes</text>
+      <text class="s" x="320" y="232" text-anchor="middle">bitrate ladder and thumbnail</text>
+      <path class="ar" d="M320 238 L320 256" marker-end="url(#f2)"/>
+
+      <rect class="b" x="170" y="258" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="280" text-anchor="middle">Webhook says the versions are ready</text>
+      <text class="s" x="320" y="296" text-anchor="middle">the reel becomes eligible for the feed</text>
+    </svg>
+    <figcaption>A reel exists in the database well before it is watchable. The webhook is what flips it.</figcaption>
+  </figure>
+
+  <h2 id="services">The services</h2>
+  <p>
+    Node services on Lambda behind API Gateway, one deployable per service. Reads go over
+    HTTP between them. Anything that can happen after the user has their response goes on
+    a queue, so placing an order returns as soon as the order is written and the
+    notification, the brand ping and the analytics write happen behind it.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 320" role="img"
+         aria-label="Consumer app and brand dashboard call an API Gateway, which fronts eight Lambda services, with SQS handling work that happens after the response.">
+      <defs>
+        <marker id="f3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="100" y="8" width="180" height="36" rx="6"/>
+      <text class="t" x="190" y="31" text-anchor="middle">Consumer app</text>
+
+      <rect class="b" x="360" y="8" width="180" height="36" rx="6"/>
+      <text class="t" x="450" y="31" text-anchor="middle">Brand dashboard</text>
+
+      <path class="ar" d="M190 44 L190 60"/>
+      <path class="ar" d="M450 44 L450 60"/>
+      <path class="ar" d="M190 60 L450 60"/>
+      <path class="ar" d="M320 60 L320 76" marker-end="url(#f3)"/>
+
+      <rect class="b-a" x="180" y="78" width="280" height="40" rx="6"/>
+      <text class="t" x="320" y="103" text-anchor="middle">API Gateway</text>
+      <path class="ar" d="M320 118 L320 138" marker-end="url(#f3)"/>
+
+      <text class="l" x="0" y="136">Lambda, one deployable per service</text>
+      <rect class="b-d" x="0" y="140" width="640" height="110" rx="8"/>
+
+      <rect class="b" x="10" y="156" width="148" height="38" rx="5"/>
+      <text class="s" x="84" y="179" text-anchor="middle">auth + users</text>
+      <rect class="b" x="168" y="156" width="148" height="38" rx="5"/>
+      <text class="s" x="242" y="179" text-anchor="middle">brands + catalog</text>
+      <rect class="b" x="326" y="156" width="148" height="38" rx="5"/>
+      <text class="s" x="400" y="179" text-anchor="middle">reels</text>
+      <rect class="b" x="484" y="156" width="146" height="38" rx="5"/>
+      <text class="s" x="557" y="179" text-anchor="middle">feed</text>
+
+      <rect class="b" x="10" y="204" width="148" height="38" rx="5"/>
+      <text class="s" x="84" y="227" text-anchor="middle">orders</text>
+      <rect class="b" x="168" y="204" width="148" height="38" rx="5"/>
+      <text class="s" x="242" y="227" text-anchor="middle">payments</text>
+      <rect class="b" x="326" y="204" width="148" height="38" rx="5"/>
+      <text class="s" x="400" y="227" text-anchor="middle">petpooja bridge</text>
+      <rect class="b" x="484" y="204" width="146" height="38" rx="5"/>
+      <text class="s" x="557" y="227" text-anchor="middle">notifications</text>
+
+      <path class="ar" d="M320 250 L320 268" marker-end="url(#f3)"/>
+
+      <rect class="b-a" x="170" y="270" width="300" height="40" rx="6"/>
+      <text class="t" x="320" y="295" text-anchor="middle">SQS for anything after the response</text>
+    </svg>
+    <figcaption>Eight services was a lot for two people. More on that at the bottom.</figcaption>
+  </figure>
+
+  <h2 id="petpooja">Orders and the Petpooja bridge</h2>
+  <p>
+    Restaurants already run their kitchen on a POS, and the one most of ours used was
+    Petpooja. Asking a restaurant to watch a second tablet for our orders was never going
+    to work, so our orders had to arrive in the system they already had open.
+  </p>
+  <p>
+    It runs in both directions. We pull their menu, so categories, items, variations,
+    addons and availability, and map it into our catalog. We push orders back so the
+    ticket prints in the kitchen like any other order, and they push status to us as it
+    moves.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 410" role="img"
+         aria-label="Ordering from a reel goes through checkout with a price revalidation, payment, order write, then splits to a Petpooja push for food or the brand dashboard for retail, with status callbacks returning to the user.">
+      <defs>
+        <marker id="f4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="200" y="8" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">Tap order on a reel</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#f4)"/>
+
+      <rect class="b-a" x="170" y="66" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="88" text-anchor="middle">Checkout</text>
+      <text class="s" x="320" y="104" text-anchor="middle">price revalidated against a fresh menu pull</text>
+      <path class="ar" d="M320 110 L320 128" marker-end="url(#f4)"/>
+
+      <rect class="b" x="200" y="130" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="154" text-anchor="middle">Payment captured</text>
+      <path class="ar" d="M320 168 L320 186" marker-end="url(#f4)"/>
+
+      <rect class="b" x="170" y="188" width="300" height="38" rx="6"/>
+      <text class="t" x="320" y="212" text-anchor="middle">Order written, response returned</text>
+
+      <path class="ar" d="M320 226 L320 252"/>
+      <path class="ar" d="M170 252 L470 252"/>
+      <path class="ar" d="M170 252 L170 270" marker-end="url(#f4)"/>
+      <path class="ar" d="M470 252 L470 270" marker-end="url(#f4)"/>
+
+      <rect class="b-a" x="40" y="272" width="260" height="56" rx="6"/>
+      <text class="t" x="170" y="292" text-anchor="middle">Food brand</text>
+      <text class="s" x="170" y="308" text-anchor="middle">pushed into Petpooja with our</text>
+      <text class="s" x="170" y="322" text-anchor="middle">order id as the external ref</text>
+
+      <rect class="b" x="340" y="272" width="260" height="56" rx="6"/>
+      <text class="t" x="470" y="292" text-anchor="middle">Retail brand</text>
+      <text class="s" x="470" y="308" text-anchor="middle">appears on the brand</text>
+      <text class="s" x="470" y="322" text-anchor="middle">dashboard</text>
+
+      <path class="ar" d="M170 328 L170 344"/>
+      <path class="ar" d="M470 328 L470 344"/>
+      <path class="ar" d="M170 344 L470 344"/>
+      <path class="ar" d="M320 344 L320 362" marker-end="url(#f4)"/>
+
+      <rect class="b" x="170" y="364" width="300" height="38" rx="6"/>
+      <text class="t" x="320" y="388" text-anchor="middle">Status callbacks update the user</text>
+    </svg>
+    <figcaption>The food path is the one with a third party in it, so it is the one with the retries.</figcaption>
+  </figure>
+
+  <h4>Three things took most of the work</h4>
+  <ul>
+    <li>
+      <strong>Menu shape.</strong> Their variations and addons do not map cleanly onto
+      ours. A wrong mapping means somebody orders a regular and gets charged for a large,
+      and you find out from a support message rather than an exception.
+    </li>
+    <li>
+      <strong>Idempotency on the push.</strong> A timeout on our side does not mean the
+      order failed to reach them. We send our own order id as the external reference and
+      treat the push as an upsert, so a retry cannot print the same ticket twice.
+    </li>
+    <li>
+      <strong>Price drift.</strong> A cached menu goes stale, and selling at yesterday's
+      price is our loss. The price is revalidated against a fresh pull at checkout rather
+      than trusted from whatever the feed was showing.
+    </li>
+  </ul>
+
+  <h2 id="data">Data model</h2>
+  <p>
+    MongoDB, split by service rather than one shared schema. The indexes that mattered
+    were the 2dsphere on the brand service area, a compound index on reel status and score
+    for the feed read, and one on brand and status for the dashboard.
+  </p>
+  <p>
+    Reels carry a snapshot of the brand name, logo and service cells instead of joining at
+    read time, so a page of the feed is one query. The cost is a fan out when a brand
+    renames itself or changes its delivery area, which is rare enough to be worth it.
+  </p>
+
+  <h2 id="deploy">Deployment</h2>
+  <p>
+    Lambda behind API Gateway, MongoDB Atlas, SQS for the work that happens after the
+    response, and Cloudinary for video and its CDN.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 185" role="img"
+         aria-label="Consumer and brand apps call API Gateway and Lambda services, backed by MongoDB Atlas, SQS and Cloudinary.">
+      <defs>
+        <marker id="f5" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="10" y="44" width="140" height="50" rx="6"/>
+      <text class="t" x="80" y="66" text-anchor="middle">Apps</text>
+      <text class="s" x="80" y="82" text-anchor="middle">consumer and brand</text>
+      <path class="ar" d="M150 69 L186 69" marker-end="url(#f5)"/>
+
+      <rect class="b-a" x="190" y="38" width="210" height="62" rx="6"/>
+      <text class="t" x="295" y="58" text-anchor="middle">API Gateway</text>
+      <text class="s" x="295" y="75" text-anchor="middle">Node on Lambda,</text>
+      <text class="s" x="295" y="91" text-anchor="middle">one set per service</text>
+
+      <path class="ar" d="M400 58 L434 36" marker-end="url(#f5)"/>
+      <path class="ar" d="M400 69 L434 92" marker-end="url(#f5)"/>
+      <path class="ar" d="M400 82 L434 148" marker-end="url(#f5)"/>
+
+      <rect class="b" x="438" y="14" width="190" height="44" rx="6"/>
+      <text class="t" x="533" y="34" text-anchor="middle">MongoDB Atlas</text>
+      <text class="s" x="533" y="50" text-anchor="middle">split per service</text>
+
+      <rect class="b" x="438" y="70" width="190" height="44" rx="6"/>
+      <text class="t" x="533" y="90" text-anchor="middle">SQS</text>
+      <text class="s" x="533" y="106" text-anchor="middle">post response work</text>
+
+      <rect class="b" x="438" y="126" width="190" height="44" rx="6"/>
+      <text class="t" x="533" y="146" text-anchor="middle">Cloudinary</text>
+      <text class="s" x="533" y="162" text-anchor="middle">video and its CDN</text>
+    </svg>
+    <figcaption>Traffic was spiky around meal times and quiet in between, which suited paying per request.</figcaption>
+  </figure>
+
+  <p>
+    Cold starts were the cost of that. We kept bundles small and put provisioned
+    concurrency on the feed and order functions around peak hours, since those are the two
+    places a delay actually gets noticed.
+  </p>
+
+  <h2 id="learned">What I learned</h2>
+  <ul>
+    <li>Eight services between two engineers cost us more than it saved. The boundaries
+      were sensible, but deploying, tracing and versioning that many things showed up as
+      friction every week, and fewer services would have let us move faster.</li>
+    <li>The interesting constraint turned out to be serviceability rather than video.
+      Once the feed could only show what was able to reach you, most of the decisions
+      downstream got easier to reason about.</li>
+    <li>Integrating with a POS that a restaurant already depends on means their failure
+      modes become yours. Most of the Petpooja work was handling timeouts and retries
+      rather than learning their API.</li>
+  </ul>
+
+  <hr>
+
+  <p class="small">
+    <a href="../index.html">Back to home</a> &middot;
+    <a href="knowledge-assistant.html">Knowledge assistant</a> &middot;
+    <a href="rbac.html">Flexday RBAC</a> &middot;
+    <a href="kureita.html">Kureita</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>
