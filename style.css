@@ -1,0 +1,130 @@
+/* ============================================================
+   Rishav Raj, portfolio
+   Dark, one narrow column, sans serif, no cards or borders.
+   ============================================================ */
+
+:root{
+  --bg:#181818;
+  --ink:#c8c6c3;        /* body text, deliberately not white */
+  --ink-bright:#f5f4f2; /* headings, bold, links */
+  --ink-soft:#918e8a;
+  --ink-faint:#6f6c68;
+  --rule:#2f2f2f;
+  --wash:#212121;
+  --underline:#5a5754;
+  --link-hover:#ffffff;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%; background:var(--bg); scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font:15px/1.65 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+.wrap{max-width:620px; margin:0 auto; padding:0 20px}
+
+/* ---------- typography ----------
+   On a dark background weight alone reads poorly, so bold is carried by
+   colour as well: body text sits below white, headings and strong sit above. */
+h1{font-size:16px; font-weight:600; color:var(--ink-bright); letter-spacing:-.005em; margin:0 0 20px}
+h2{font-size:15px; font-weight:600; color:var(--ink-bright); margin:38px 0 10px}
+h3{font-size:15px; font-weight:600; color:var(--ink-bright); margin:26px 0 7px}
+h4{font-size:14px; font-weight:600; color:var(--ink-soft); margin:22px 0 6px}
+p{margin:0 0 15px}
+ul{margin:0 0 15px; padding-left:19px}
+li{margin:0 0 7px}
+strong,b{font-weight:600; color:var(--ink-bright)}
+em{font-style:italic}
+
+a{color:var(--ink-bright); text-decoration:underline;
+  text-decoration-color:var(--underline);
+  text-underline-offset:3px; text-decoration-thickness:1px}
+a:hover{color:var(--link-hover); text-decoration-color:currentColor}
+
+code{font:13px var(--mono); background:var(--wash); color:var(--ink-bright);
+  padding:2px 5px; border-radius:4px}
+
+.muted{color:var(--ink-soft)}
+.small{font-size:14px}
+
+/* ---------- page shell ---------- */
+.page{padding-top:64px}
+hr{border:0; border-top:1px solid var(--rule); margin:38px 0}
+
+/* ---------- link lists ---------- */
+.list{list-style:none; margin:0 0 15px; padding:0}
+.list li{margin:0 0 10px}
+.list a{font-weight:500}
+.list .note{display:block; color:var(--ink-soft); font-size:14px; margin-top:1px}
+
+/* ---------- table of contents ---------- */
+.toc{list-style:none; margin:0; padding:0}
+.toc li{margin:0 0 8px}
+
+/* ---------- label rows ---------- */
+.rows{margin:0 0 15px}
+.row{display:flex; gap:12px; margin:0 0 9px; flex-wrap:wrap}
+.row .k{flex:0 0 112px; color:var(--ink-faint); font-size:14px}
+.row .v{flex:1 1 280px; font-size:14.5px}
+
+/* ---------- diagrams ---------- */
+.diagram{background:var(--wash); border-radius:6px; padding:18px; margin:22px 0;
+  overflow-x:auto}
+.diagram pre{margin:0; font:11.5px/1.6 var(--mono); color:var(--ink-bright); white-space:pre}
+
+/* ---------- figures (inline svg diagrams) ---------- */
+figure{margin:24px 0}
+.fig{display:block; width:100%; height:auto}
+figcaption{font-size:13px; color:var(--ink-faint); margin-top:9px}
+
+.fig .b   {fill:var(--wash); stroke:#3a3a3a; stroke-width:1}
+.fig .b-a {fill:#1b2231;     stroke:#4b648f; stroke-width:1}
+.fig .b-d {fill:none;        stroke:#3a3a3a; stroke-width:1; stroke-dasharray:4 3}
+.fig .t   {fill:var(--ink-bright); font-family:var(--sans); font-size:11.5px; font-weight:500}
+.fig .s   {fill:var(--ink-soft);   font-family:var(--sans); font-size:10.5px}
+.fig .m   {fill:var(--ink-soft);   font-family:var(--mono); font-size:10px}
+.fig .l   {fill:var(--ink-faint);  font-family:var(--sans); font-size:10px}
+.fig .ar  {stroke:#6f6c68; stroke-width:1.1; fill:none}
+.fig .ard {stroke:#6f6c68; stroke-width:1.1; fill:none; stroke-dasharray:3 3}
+.fig .hd  {fill:#6f6c68}
+
+/* ---------- tables ---------- */
+.tablewrap{overflow-x:auto; margin:20px 0}
+table{width:100%; border-collapse:collapse; font-size:14.5px}
+th,td{text-align:left; padding:9px 12px 9px 0; border-bottom:1px solid var(--rule);
+      vertical-align:top}
+th{font-weight:600; font-size:13px; color:var(--ink-faint)}
+tr:last-child td{border-bottom:none}
+td:first-child,th:first-child{padding-right:16px}
+
+/* ---------- project page header ---------- */
+.back{font-size:14px; color:var(--ink-soft); text-decoration:none}
+.back:hover{color:var(--link-hover)}
+.title{font-size:19px; font-weight:600; color:var(--ink-bright);
+  letter-spacing:-.01em; margin:24px 0 12px}
+.standfirst{font-size:16px; color:var(--ink-soft); margin:0 0 20px}
+
+/* ---------- epigraph ---------- */
+.quote{
+  font-size:15px; font-style:italic; color:var(--ink-soft);
+  margin:0 0 22px;
+}
+h1 + .quote{margin:-6px 0 26px}   /* sits as an epigraph under the name */
+.quote cite{display:block; font-style:normal; font-size:13.5px;
+  color:var(--ink-faint); margin-top:5px}
+
+/* ---------- footer ---------- */
+footer{margin:48px 0 0; padding:22px 0 64px; border-top:1px solid var(--rule)}
+footer p{font-size:14px; color:var(--ink-soft); margin:0 0 7px}
+
+@media (max-width:600px){
+  .page{padding-top:44px}
+  .row .k{flex-basis:100%}
+}

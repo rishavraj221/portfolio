@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kureita, a node based AI video studio</title>
+<meta name="description" content="A canvas where you wire generation nodes together, and a runner that resolves the graph. Most of the work was expiry, retries and money.">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="../index.html">Rishav Raj</a>
+
+  <h1 class="title">Kureita, a node based AI video studio</h1>
+  <p class="standfirst">
+    Making a short video with AI usually means using four or five services in sequence and
+    moving files between them by hand. Kureita puts that whole sequence on one canvas.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">What</div><div class="v">Personal project, live at <a href="https://kureita.com">kureita.com</a></div></div>
+  </div>
+
+  <hr>
+
+  <h2>Worked on</h2>
+  <ul class="toc">
+    <li><a href="#runner">The canvas and the runner</a></li>
+    <li><a href="#async">Long jobs on short lived Lambdas</a></li>
+    <li><a href="#webhooks">Webhooks you can trust</a></li>
+    <li><a href="#assets">Assets that do not expire</a></li>
+    <li><a href="#billing">Paying for every node</a></li>
+    <li><a href="#models">Picking the right model</a></li>
+    <li><a href="#deploy">Deployment</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="idea">The idea</h2>
+  <p>
+    You place nodes on a canvas and connect them. Image generation, video generation,
+    voiceover, uploads, and an editor agent at the end that writes and runs TSX to build
+    the export. The connections decide the execution order, so there is no separate config
+    to keep in sync.
+  </p>
+  <p>
+    Next.js and React Flow on the front, FastAPI on Lambda behind it, around 15k lines of
+    Python. I wrote most of it.
+  </p>
+
+  <h2 id="runner">The canvas and the runner</h2>
+  <p>
+    Nodes get their inputs from whatever is wired into them, so the runner does not need a
+    separate execution plan. It builds an in degree map from the edges, runs whatever has
+    no unmet inputs, then repeats. That is Kahn's algorithm and it comes to about forty
+    lines.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 222" role="img"
+         aria-label="A canvas graph where text feeds image generation feeds video generation, a script feeds audio generation, and both branches meet at an editor agent that produces the export.">
+      <defs>
+        <marker id="k1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="12">What the user wires</text>
+
+      <rect class="b" x="10" y="24" width="110" height="34" rx="6"/>
+      <text class="s" x="65" y="45" text-anchor="middle">text</text>
+      <path class="ar" d="M120 41 L146 41" marker-end="url(#k1)"/>
+
+      <rect class="b" x="148" y="24" width="122" height="34" rx="6"/>
+      <text class="s" x="209" y="45" text-anchor="middle">imageGen</text>
+      <path class="ar" d="M270 41 L296 41" marker-end="url(#k1)"/>
+
+      <rect class="b" x="298" y="24" width="122" height="34" rx="6"/>
+      <text class="s" x="359" y="45" text-anchor="middle">videoGen</text>
+
+      <rect class="b" x="10" y="80" width="110" height="34" rx="6"/>
+      <text class="s" x="65" y="101" text-anchor="middle">script</text>
+      <path class="ar" d="M120 97 L146 97" marker-end="url(#k1)"/>
+
+      <rect class="b" x="148" y="80" width="122" height="34" rx="6"/>
+      <text class="s" x="209" y="101" text-anchor="middle">audioGen</text>
+
+      <path class="ar" d="M420 41 L432 41 L432 62 L438 62" marker-end="url(#k1)"/>
+      <path class="ar" d="M270 97 L432 97 L432 76 L438 76" marker-end="url(#k1)"/>
+
+      <rect class="b-a" x="440" y="52" width="130" height="34" rx="6"/>
+      <text class="s" x="505" y="73" text-anchor="middle">editorAgent</text>
+      <path class="ar" d="M570 69 L598 69" marker-end="url(#k1)"/>
+      <text class="s" x="602" y="73">export</text>
+
+      <text class="l" x="0" y="142">How the runner resolves it</text>
+      <rect class="b" x="10" y="150" width="620" height="58" rx="6"/>
+      <text class="m" x="320" y="176" text-anchor="middle">text, script, imageGen, audioGen, videoGen, editorAgent</text>
+      <text class="s" x="320" y="194" text-anchor="middle">nodes with no unmet inputs run first, then the graph is walked forward</text>
+    </svg>
+    <figcaption>Each node writes its output into the run state, and downstream nodes read from there.</figcaption>
+  </figure>
+
+  <p>
+    A video node that needs a start frame from an earlier clip reads an extracted frame
+    instead of the whole video. Those extractions are cached, otherwise ffmpeg would run
+    again every time someone moves around the graph.
+  </p>
+
+  <h2 id="async">Long jobs on short lived Lambdas</h2>
+  <p>
+    Video generation takes minutes. API Gateway times out at thirty seconds and Lambda
+    caps at fifteen minutes, so a request that waits for the result is not going to work.
+  </p>
+  <p>
+    Instead the request writes a run record, returns a run id and finishes. The Lambda then
+    invokes itself asynchronously against an internal endpoint guarded by a shared secret
+    rather than a user token. The point of that second invocation is that it starts with a
+    fresh fifteen minute budget and its own log stream. It writes progress to MongoDB as it
+    goes, and the browser polls the run record.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 325" role="img"
+         aria-label="A run request returns a run id immediately, the Lambda self invokes against an internal background endpoint, and the runner writes progress to MongoDB while the UI polls.">
+      <defs>
+        <marker id="k2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="180" y="8" width="280" height="38" rx="6"/>
+      <text class="m" x="320" y="32" text-anchor="middle">POST /workflows/{id}/run</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#k2)"/>
+
+      <rect class="b" x="180" y="66" width="280" height="46" rx="6"/>
+      <text class="t" x="320" y="86" text-anchor="middle">API Lambda</text>
+      <text class="s" x="320" y="103" text-anchor="middle">writes a run record</text>
+
+      <path class="ar" d="M460 89 L498 89" marker-end="url(#k2)"/>
+      <rect class="b" x="500" y="70" width="138" height="38" rx="6"/>
+      <text class="s" x="569" y="87" text-anchor="middle">returns a run id,</text>
+      <text class="s" x="569" y="101" text-anchor="middle">in under a second</text>
+
+      <path class="ar" d="M320 112 L320 132" marker-end="url(#k2)"/>
+      <text class="l" x="328" y="126">self invoke, async</text>
+
+      <rect class="b-a" x="160" y="134" width="320" height="50" rx="6"/>
+      <text class="m" x="320" y="155" text-anchor="middle">POST /execute-background</text>
+      <text class="s" x="320" y="172" text-anchor="middle">shared secret, fresh 15 min budget</text>
+      <path class="ar" d="M320 184 L320 204" marker-end="url(#k2)"/>
+
+      <rect class="b" x="160" y="206" width="320" height="46" rx="6"/>
+      <text class="t" x="320" y="226" text-anchor="middle">Runs nodes in order</text>
+      <text class="s" x="320" y="243" text-anchor="middle">writes state as it goes</text>
+      <path class="ar" d="M320 252 L320 272" marker-end="url(#k2)"/>
+
+      <rect class="b" x="200" y="274" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="298" text-anchor="middle">MongoDB run state</text>
+
+      <path class="ard" d="M440 293 L468 293" marker-end="url(#k2)"/>
+      <rect class="b" x="470" y="274" width="168" height="38" rx="6"/>
+      <text class="s" x="554" y="298" text-anchor="middle">UI polls for progress</text>
+    </svg>
+    <figcaption>Locally there is no Lambda to invoke, so the same path falls back to a background task in process.</figcaption>
+  </figure>
+
+  <p>
+    I would not call this a clean design, but it is what the platform allows and it kept
+    everything in one deployment. Adding a queue and a worker fleet felt like too much for
+    a product that was still changing shape every week.
+  </p>
+
+  <h2 id="webhooks">Webhooks you can trust</h2>
+  <p>
+    Generations that run on fal call back when they finish. That callback endpoint is
+    public and it changes billing state, so it needed more care than the rest of the API.
+  </p>
+  <p>
+    Every callback is verified before anything else happens. fal signs with ED25519, so we
+    fetch their JWKS, cache it for a day, and check the signature allowing five minutes of
+    clock drift on the timestamp. A bad signature returns 401 and nothing downstream runs.
+  </p>
+  <p>
+    After that there is an idempotency check. Webhooks arrive more than once, so a job that
+    already reached completed or failed is ignored rather than processed again. Without it
+    a retry would charge the account a second time.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 332" role="img"
+         aria-label="A callback is signature verified, checked for duplicates, then the result is downloaded and re uploaded before the node is marked complete and the account charged.">
+      <defs>
+        <marker id="k3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="200" y="8" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">fal finishes a job</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#k3)"/>
+
+      <rect class="b-a" x="165" y="66" width="310" height="52" rx="6"/>
+      <text class="t" x="320" y="88" text-anchor="middle">Verify the ED25519 signature</text>
+      <text class="s" x="320" y="105" text-anchor="middle">JWKS cached 24h, 5 min timestamp leeway</text>
+
+      <path class="ar" d="M165 92 L124 92" marker-end="url(#k3)"/>
+      <rect class="b" x="0" y="74" width="122" height="36" rx="6"/>
+      <text class="s" x="61" y="96" text-anchor="middle">401, dropped</text>
+
+      <path class="ar" d="M320 118 L320 138" marker-end="url(#k3)"/>
+
+      <rect class="b" x="225" y="140" width="190" height="34" rx="6"/>
+      <text class="t" x="320" y="161" text-anchor="middle">already finished?</text>
+
+      <path class="ar" d="M415 157 L456 157" marker-end="url(#k3)"/>
+      <text class="l" x="420" y="151">yes</text>
+      <rect class="b" x="458" y="139" width="180" height="36" rx="6"/>
+      <text class="s" x="548" y="161" text-anchor="middle">ignore the duplicate</text>
+
+      <path class="ar" d="M320 174 L320 194" marker-end="url(#k3)"/>
+      <text class="l" x="328" y="188">no</text>
+
+      <rect class="b" x="165" y="196" width="310" height="50" rx="6"/>
+      <text class="t" x="320" y="217" text-anchor="middle">Download the result</text>
+      <text class="s" x="320" y="234" text-anchor="middle">and re upload it to our own S3</text>
+      <path class="ar" d="M320 246 L320 266" marker-end="url(#k3)"/>
+
+      <rect class="b" x="165" y="268" width="310" height="52" rx="6"/>
+      <text class="t" x="320" y="289" text-anchor="middle">Mark the node complete</text>
+      <text class="s" x="320" y="306" text-anchor="middle">and charge the billable units</text>
+    </svg>
+    <figcaption>The signature and duplicate checks both run before anything that costs money.</figcaption>
+  </figure>
+
+  <h2 id="assets">Assets that do not expire</h2>
+  <p>
+    There are two expiry problems here, and neither throws an error when it goes wrong.
+  </p>
+  <p>
+    Provider CDN links do not last. When a job finishes we download the result and store it
+    in our own bucket, so older videos still load.
+  </p>
+  <p>
+    Our own presigned URLs expire too, and a canvas sticks around for months. Stored S3
+    URLs get signed again whenever a workflow is read, with the old signature stripped off
+    first, so the UI always gets a URL that currently works.
+  </p>
+
+  <h2 id="billing">Paying for every node</h2>
+  <p>
+    Every node run costs money at a provider, so an account holds a USD balance rather than
+    a credit that has to be converted later.
+  </p>
+  <p>
+    Charges use the billable units the provider sends back, since that is the number they
+    invoice on. A run that would push the balance below zero returns a 402 before any
+    provider is called. Deposits arrive through payment webhooks, and there are voucher
+    codes for trials.
+  </p>
+
+  <h2 id="models">Picking the right model</h2>
+  <p>
+    Video providers accept different inputs. Some are text only, some need a start image,
+    some take both a start and an end frame. Expecting users to keep track of that would
+    have generated a lot of support questions.
+  </p>
+  <p>
+    So the node checks what is wired into it and ranks the available models by whether they
+    can handle those inputs, rather than defaulting to one. Wire an image in and it picks
+    an image to video model on its own.
+  </p>
+
+  <h2 id="deploy">Deployment</h2>
+  <p>
+    The API is a Docker image on Lambda behind the Web Adapter, managed with SAM, which
+    means it stays an ordinary FastAPI app rather than something built around a Lambda
+    handler. The frontend is on Amplify and deploys on push. Uploads go straight to S3
+    through presigned URLs, so media never passes through the function.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 175" role="img"
+         aria-label="The browser runs Next.js on Amplify and talks to FastAPI on Lambda, which is backed by MongoDB Atlas, S3 and the AI providers.">
+      <defs>
+        <marker id="k4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="15" y="58" width="150" height="50" rx="6"/>
+      <text class="t" x="90" y="80" text-anchor="middle">Browser</text>
+      <text class="s" x="90" y="96" text-anchor="middle">Next.js on Amplify</text>
+      <path class="ar" d="M165 83 L203 83" marker-end="url(#k4)"/>
+
+      <rect class="b-a" x="205" y="52" width="190" height="62" rx="6"/>
+      <text class="t" x="300" y="74" text-anchor="middle">FastAPI on Lambda</text>
+      <text class="s" x="300" y="90" text-anchor="middle">Docker image via</text>
+      <text class="s" x="300" y="105" text-anchor="middle">Lambda Web Adapter</text>
+
+      <path class="ar" d="M395 70 L441 36" marker-end="url(#k4)"/>
+      <path class="ar" d="M395 83 L441 88" marker-end="url(#k4)"/>
+      <path class="ar" d="M395 98 L441 140" marker-end="url(#k4)"/>
+
+      <rect class="b" x="445" y="14" width="190" height="40" rx="6"/>
+      <text class="t" x="540" y="32" text-anchor="middle">MongoDB Atlas</text>
+      <text class="s" x="540" y="47" text-anchor="middle">workflows, runs, billing</text>
+
+      <rect class="b" x="445" y="68" width="190" height="40" rx="6"/>
+      <text class="t" x="540" y="86" text-anchor="middle">S3</text>
+      <text class="s" x="540" y="101" text-anchor="middle">assets and uploads</text>
+
+      <rect class="b" x="445" y="122" width="190" height="40" rx="6"/>
+      <text class="t" x="540" y="140" text-anchor="middle">AI providers</text>
+      <text class="s" x="540" y="155" text-anchor="middle">fal, Runware, ElevenLabs</text>
+    </svg>
+    <figcaption>Traffic is bursty with long quiet gaps, so paying per request works out well here. Provider costs dominate anyway.</figcaption>
+  </figure>
+
+  <h2 id="learned">What I learned</h2>
+  <ul>
+    <li>Most of the time went on expiry, retries and billing rather than on the AI parts.
+      Those are the same problems you get in any product leaning on a lot of third party
+      APIs.</li>
+    <li>Serverless was easy for the short requests and awkward for the long ones. I would
+      use it again here, but I would work out the async path at the start rather than after
+      the first video timed out.</li>
+    <li>A public webhook that changes billing needs a signature check and an idempotency
+      check. I added both later than I should have.</li>
+  </ul>
+
+  <hr>
+
+  <p class="small">
+    <a href="../index.html">Back to home</a> &middot;
+    <a href="knowledge-assistant.html">Knowledge assistant</a> &middot;
+    <a href="rbac.html">Flexday RBAC</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>

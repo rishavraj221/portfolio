@@ -1,0 +1,27 @@
+# secrets
+secret.csv
+*.env
+.env.*
+
+# OS
+.DS_Store
+
+# editor
+.vscode/
+.idea/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.tfvars
+infra/crash.log
+infra/tfplan

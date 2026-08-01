@@ -1,0 +1,43 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # required to mint the OIDC token for AWS
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::071329584603:role/github-deploy-portfolio
+          aws-region: ap-south-1
+
+      - name: Sync site to S3
+        run: |
+          aws s3 sync . s3://rishavraj.info \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude "infra/*" \
+            --exclude "*.tex" \
+            --exclude "secret.csv" \
+            --exclude ".DS_Store" \
+            --exclude ".gitignore"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E1A5LYTGBYBYRY \
+            --paths "/*"

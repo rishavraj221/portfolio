@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An RBAC service for clients on three different clouds</title>
+<meta name="description" content="A multi tenant authorization service at Flexday, built because our clients ran on AWS, on Azure and on their own hardware.">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="../index.html">Rishav Raj</a>
+
+  <h1 class="title">An RBAC service for clients on three different clouds</h1>
+  <p class="standfirst">
+    Flexday's clients ran on AWS, on Azure, and in their own data centres. They all
+    needed the same permission model, and no single cloud provider could give it to
+    them.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">Where</div><div class="v">Flexday AI</div></div>
+  </div>
+
+  <hr>
+
+  <h2>Worked on</h2>
+  <ul class="toc">
+    <li><a href="#why">Why not AWS IAM or Entra</a></li>
+    <li><a href="#model">The model</a></li>
+    <li><a href="#check">How a check happens</a></li>
+    <li><a href="#tokens">Tokens and revocation</a></li>
+    <li><a href="#m2m">Service to service</a></li>
+    <li><a href="#isolation">Tenant isolation</a></li>
+    <li><a href="#scale">Scale and deployment</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="problem">The problem</h2>
+  <p>
+    Flexday shipped several products to enterprise clients. Each product had its own UI
+    and its own backend services, and every one of them needed to know what a given user
+    was allowed to do. We built one service to answer that question, and everything else
+    asked it.
+  </p>
+
+  <h2 id="why">Why not AWS IAM or Entra</h2>
+  <p>
+    The obvious move is to use whatever the cloud already gives you. It did not work
+    here, for two reasons.
+  </p>
+  <p>
+    Our clients were not in one place. Some ran on AWS, some on Azure, some on their own
+    hardware. Picking AWS IAM would have meant writing a second implementation for
+    everyone else, so two sets of rules, two sets of bugs and two audit trails to explain
+    during a security review.
+  </p>
+  <p>
+    Cloud IAM also governs cloud resources. It is very good at deciding whether a
+    principal can read an S3 bucket. It has no idea what a purchase order or a shift
+    roster is, and those are the things clients actually wanted to control. Entra app
+    roles get closer but stay coarse, and per client custom roles get awkward quickly.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 258" role="img"
+         aria-label="Clients running on AWS, Azure and on premise all point at one Flexday RBAC service, which is then used by Flexday UIs, Flexday services and client integrations.">
+      <defs>
+        <marker id="r1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="12">Clients run in different places</text>
+
+      <rect class="b" x="15" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="105" y="39" text-anchor="middle">Client A</text>
+      <text class="s" x="105" y="55" text-anchor="middle">on AWS</text>
+
+      <rect class="b" x="230" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="320" y="39" text-anchor="middle">Client B</text>
+      <text class="s" x="320" y="55" text-anchor="middle">on Azure</text>
+
+      <rect class="b" x="445" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="535" y="39" text-anchor="middle">Client C</text>
+      <text class="s" x="535" y="55" text-anchor="middle">on their own hardware</text>
+
+      <path class="ar" d="M105 64 L105 84"/>
+      <path class="ar" d="M320 64 L320 84"/>
+      <path class="ar" d="M535 64 L535 84"/>
+      <path class="ar" d="M105 84 L535 84"/>
+      <path class="ar" d="M320 84 L320 106" marker-end="url(#r1)"/>
+
+      <rect class="b-a" x="175" y="108" width="290" height="54" rx="6"/>
+      <text class="t" x="320" y="130" text-anchor="middle">Flexday RBAC service</text>
+      <text class="s" x="320" y="147" text-anchor="middle">one model, no cloud dependency</text>
+
+      <path class="ar" d="M320 162 L320 180"/>
+      <path class="ar" d="M105 180 L535 180"/>
+      <path class="ar" d="M105 180 L105 200" marker-end="url(#r1)"/>
+      <path class="ar" d="M320 180 L320 200" marker-end="url(#r1)"/>
+      <path class="ar" d="M535 180 L535 200" marker-end="url(#r1)"/>
+
+      <rect class="b" x="15" y="202" width="180" height="44" rx="6"/>
+      <text class="t" x="105" y="221" text-anchor="middle">Flexday UIs</text>
+      <text class="s" x="105" y="237" text-anchor="middle">browser sessions</text>
+
+      <rect class="b" x="230" y="202" width="180" height="44" rx="6"/>
+      <text class="t" x="320" y="221" text-anchor="middle">Flexday services</text>
+      <text class="s" x="320" y="237" text-anchor="middle">service to service</text>
+
+      <rect class="b" x="445" y="202" width="180" height="44" rx="6"/>
+      <text class="t" x="535" y="221" text-anchor="middle">Client systems</text>
+      <text class="s" x="535" y="237" text-anchor="middle">their own integrations</text>
+    </svg>
+    <figcaption>One authority, asked by three kinds of caller, for clients sitting in three different places.</figcaption>
+  </figure>
+
+  <h2 id="model">The model</h2>
+  <p>
+    A <strong>tenant</strong> is one client organisation, and everything belongs to one.
+    A <strong>user</strong> has an email and credentials, and can be a member of more
+    than one tenant. The membership holds the role assignments rather than the user, so
+    the same person can be an admin for one client and a viewer for another.
+  </p>
+  <p>
+    A <strong>role</strong> is a bundle of permissions, either a system role we shipped
+    or a custom one a tenant defined. Permissions are plain strings in the form
+    <code>resource:action</code>, so <code>project:read</code> or
+    <code>invoice:approve</code>.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 322" role="img"
+         aria-label="Entity model. A tenant owns memberships and service clients. Memberships carry roles which carry permissions. Service clients carry scopes drawn from the same permission strings.">
+      <defs>
+        <marker id="r2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b-a" x="245" y="14" width="150" height="44" rx="6"/>
+      <text class="t" x="320" y="33" text-anchor="middle">Tenant</text>
+      <text class="s" x="320" y="49" text-anchor="middle">one client org</text>
+
+      <path class="ar" d="M320 58 L320 74"/>
+      <path class="ar" d="M160 74 L480 74"/>
+      <path class="ar" d="M160 74 L160 94" marker-end="url(#r2)"/>
+      <path class="ar" d="M480 74 L480 94" marker-end="url(#r2)"/>
+
+      <rect class="b" x="70" y="96" width="180" height="58" rx="6"/>
+      <text class="t" x="160" y="116" text-anchor="middle">Membership</text>
+      <text class="s" x="160" y="132" text-anchor="middle">a user inside a tenant,</text>
+      <text class="s" x="160" y="146" text-anchor="middle">with role assignments</text>
+
+      <rect class="b" x="390" y="96" width="180" height="58" rx="6"/>
+      <text class="t" x="480" y="120" text-anchor="middle">Service client</text>
+      <text class="s" x="480" y="138" text-anchor="middle">id and secret</text>
+
+      <path class="ar" d="M160 154 L160 176" marker-end="url(#r2)"/>
+      <path class="ar" d="M480 154 L480 176" marker-end="url(#r2)"/>
+
+      <rect class="b" x="70" y="178" width="180" height="54" rx="6"/>
+      <text class="t" x="160" y="199" text-anchor="middle">Role</text>
+      <text class="s" x="160" y="216" text-anchor="middle">system or tenant custom</text>
+
+      <rect class="b" x="390" y="178" width="180" height="54" rx="6"/>
+      <text class="t" x="480" y="199" text-anchor="middle">Scopes</text>
+      <text class="s" x="480" y="216" text-anchor="middle">same permission strings</text>
+
+      <path class="ar" d="M160 232 L160 254" marker-end="url(#r2)"/>
+
+      <rect class="b" x="70" y="256" width="180" height="54" rx="6"/>
+      <text class="t" x="160" y="277" text-anchor="middle">Permissions</text>
+      <text class="m" x="160" y="294" text-anchor="middle">resource:action</text>
+
+      <path class="ard" d="M390 205 L320 205 L320 283 L252 283" marker-end="url(#r2)"/>
+      <text class="l" x="328" y="248">one vocabulary</text>
+    </svg>
+    <figcaption>Service clients are separate from users, but their scopes come from the same permission strings roles are built from.</figcaption>
+  </figure>
+
+  <h2 id="check">How a check happens</h2>
+  <p>
+    Two tiers, because the two kinds of question cost different amounts to answer.
+  </p>
+  <p>
+    Most checks are coarse. Can this user open the billing page. That answer is already
+    in the access token, so the service validates the signature against a cached JWKS and
+    reads the permission out. No network call, and no dependency on us being up.
+  </p>
+  <p>
+    Some checks cannot be answered from a token. Can this user approve document 4192,
+    which belongs to a project they may or may not be on. Putting every resource a user
+    can touch into a token would make it enormous and stale within minutes, so those go
+    to a central endpoint with the subject, action and resource, and we answer.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 340" role="img"
+         aria-label="A request is validated locally against a cached key set, coarse permissions are read from the token, and only resource level questions go to the central authorize endpoint.">
+      <defs>
+        <marker id="r3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="225" y="8" width="190" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">Request at a service</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#r3)"/>
+
+      <rect class="b-a" x="165" y="66" width="310" height="50" rx="6"/>
+      <text class="t" x="320" y="88" text-anchor="middle">Validate the token locally</text>
+      <text class="s" x="320" y="105" text-anchor="middle">signature from cached JWKS, no network hop</text>
+      <path class="ar" d="M320 116 L320 136" marker-end="url(#r3)"/>
+
+      <rect class="b" x="240" y="138" width="160" height="34" rx="6"/>
+      <text class="t" x="320" y="159" text-anchor="middle">resource level?</text>
+
+      <path class="ar" d="M240 155 L198 155" marker-end="url(#r3)"/>
+      <text class="l" x="206" y="149">no</text>
+      <rect class="b" x="10" y="136" width="184" height="40" rx="6"/>
+      <text class="s" x="102" y="153" text-anchor="middle">answered from the token,</text>
+      <text class="s" x="102" y="167" text-anchor="middle">roles and coarse scopes</text>
+
+      <path class="ar" d="M320 172 L320 196" marker-end="url(#r3)"/>
+      <text class="l" x="328" y="190">yes</text>
+
+      <rect class="b-a" x="165" y="198" width="310" height="52" rx="6"/>
+      <text class="m" x="320" y="220" text-anchor="middle">POST /v1/authorize</text>
+      <text class="s" x="320" y="238" text-anchor="middle">subject, action, resource</text>
+      <path class="ar" d="M320 250 L320 270" marker-end="url(#r3)"/>
+
+      <rect class="b" x="165" y="272" width="310" height="54" rx="6"/>
+      <text class="t" x="320" y="293" text-anchor="middle">RBAC service evaluates</text>
+      <text class="s" x="320" y="310" text-anchor="middle">allow or deny, and the decision is logged</text>
+    </svg>
+    <figcaption>The left branch never leaves the calling service. The right branch is the only one that produces a record on our side.</figcaption>
+  </figure>
+
+  <p>
+    Splitting it this way decided something I had not expected. A decision made locally
+    from a JWT leaves no trace with us, so anything that needs an audit trail has to take
+    the central path whether or not it needs it for correctness.
+  </p>
+
+  <h2 id="tokens">Tokens and revocation</h2>
+  <p>
+    Stateless tokens are fast and hard to take back. An admin removes someone's role and
+    that person keeps the old permissions until their token expires.
+  </p>
+  <p>
+    Short expiry is the usual answer and it is a blunt one. Fifteen minutes of stale
+    access is still fifteen minutes, and shortening it further just multiplies refresh
+    traffic.
+  </p>
+  <p>
+    We used a policy version per tenant instead. Every token carries the version it was
+    minted under. When an admin changes a role the tenant version increments, and
+    services pick the new value up from a small cached map. If a token is behind, the
+    service forces a refresh or falls back to a central check, so a permission change
+    lands on the next request rather than at the next expiry.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 322" role="img"
+         aria-label="An admin role change bumps the tenant policy version, services refresh their cached map, and any token minted under an older version is refreshed or checked centrally.">
+      <defs>
+        <marker id="r4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="200" y="8" width="240" height="38" rx="6"/>
+      <text class="t" x="320" y="32" text-anchor="middle">Admin changes a role</text>
+      <path class="ar" d="M320 46 L320 64" marker-end="url(#r4)"/>
+
+      <rect class="b-a" x="200" y="66" width="240" height="44" rx="6"/>
+      <text class="t" x="320" y="86" text-anchor="middle">Tenant policy version</text>
+      <text class="m" x="320" y="102" text-anchor="middle">pv += 1</text>
+      <path class="ar" d="M320 110 L320 128" marker-end="url(#r4)"/>
+
+      <rect class="b" x="180" y="130" width="280" height="40" rx="6"/>
+      <text class="t" x="320" y="155" text-anchor="middle">Services refresh their version map</text>
+      <path class="ar" d="M320 170 L320 188" marker-end="url(#r4)"/>
+
+      <rect class="b" x="225" y="190" width="190" height="36" rx="6"/>
+      <text class="t" x="320" y="213" text-anchor="middle">token version current?</text>
+
+      <path class="ar" d="M415 208 L458 208" marker-end="url(#r4)"/>
+      <text class="l" x="422" y="202">yes</text>
+      <rect class="b" x="460" y="189" width="176" height="38" rx="6"/>
+      <text class="s" x="548" y="206" text-anchor="middle">use the token,</text>
+      <text class="s" x="548" y="220" text-anchor="middle">no extra work</text>
+
+      <path class="ar" d="M320 226 L320 250" marker-end="url(#r4)"/>
+      <text class="l" x="328" y="244">no</text>
+
+      <rect class="b-a" x="180" y="252" width="280" height="54" rx="6"/>
+      <text class="t" x="320" y="274" text-anchor="middle">Refresh the token,</text>
+      <text class="s" x="320" y="291" text-anchor="middle">or fall back to a central check</text>
+    </svg>
+    <figcaption>A role change takes effect on the next request rather than whenever the token happens to expire.</figcaption>
+  </figure>
+
+  <p>
+    Refresh tokens rotate on every use, and a reused one invalidates the whole chain.
+    That is how a stolen refresh token gets noticed instead of quietly working for a
+    month.
+  </p>
+
+  <h2 id="m2m">Service to service</h2>
+  <p>
+    Other Flexday services and client integrations authenticate as themselves rather than
+    as a user. Client credentials go in, a token with scopes comes back, on a separate
+    audience so a service token cannot be replayed against a user endpoint.
+  </p>
+  <p>
+    Scopes are the same permission strings that roles are built from. One vocabulary
+    across people and machines meant one place to look when something came back denied,
+    which mattered more in support than it did in design.
+  </p>
+
+  <h2 id="isolation">Tenant isolation</h2>
+  <p>
+    The worst class of bug here is the silent one. A query missing its tenant filter
+    returns another client's data and nothing fails. No exception, no alert, and the
+    tests pass because they only ever seed one tenant.
+  </p>
+  <p>
+    Two things helped. Every repository function takes the tenant id as a required first
+    argument and throws without it, so a missing filter becomes a crash instead of a
+    leak. And the test suite seeds two tenants for every case, then asserts that a
+    request scoped to one never returns a document belonging to the other.
+  </p>
+  <p>
+    The second one caught more than the first did.
+  </p>
+
+  <h2 id="scale">Scale and deployment</h2>
+  <p>
+    Around 20 client tenants and 35k users, with roughly 8k active on a given day. Access
+    tokens last fifteen minutes, so a working day is about 32 refreshes per user. That,
+    plus the resource level checks, lands near 50 requests a second at peak.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 205" role="img"
+         aria-label="Callers reach the RBAC service through a load balancer, and the service is backed by a MongoDB replica set and a Redis cache.">
+      <defs>
+        <marker id="r5" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="12">20 tenants, ~35k users, ~8k daily active</text>
+
+      <rect class="b" x="15" y="24" width="160" height="56" rx="6"/>
+      <text class="t" x="95" y="46" text-anchor="middle">Callers</text>
+      <text class="s" x="95" y="62" text-anchor="middle">UIs, services,</text>
+      <text class="s" x="95" y="75" text-anchor="middle">integrations</text>
+      <path class="ar" d="M175 52 L215 52" marker-end="url(#r5)"/>
+
+      <rect class="b" x="217" y="24" width="150" height="56" rx="6"/>
+      <text class="t" x="292" y="48" text-anchor="middle">ALB</text>
+      <text class="s" x="292" y="65" text-anchor="middle">~50 req/s peak</text>
+      <path class="ar" d="M367 52 L407 52" marker-end="url(#r5)"/>
+
+      <rect class="b-a" x="409" y="18" width="216" height="68" rx="6"/>
+      <text class="t" x="517" y="40" text-anchor="middle">RBAC service</text>
+      <text class="s" x="517" y="57" text-anchor="middle">Node and Express, 3 pods</text>
+      <text class="s" x="517" y="72" text-anchor="middle">1 vCPU / 1 GiB each</text>
+
+      <path class="ar" d="M517 86 L517 108"/>
+      <path class="ar" d="M402 108 L562 108"/>
+      <path class="ar" d="M402 108 L402 128" marker-end="url(#r5)"/>
+      <path class="ar" d="M562 108 L562 128" marker-end="url(#r5)"/>
+
+      <rect class="b" x="330" y="130" width="145" height="62" rx="6"/>
+      <text class="t" x="402" y="152" text-anchor="middle">MongoDB</text>
+      <text class="s" x="402" y="168" text-anchor="middle">replica set</text>
+      <text class="s" x="402" y="182" text-anchor="middle">2 vCPU / 8 GiB</text>
+
+      <rect class="b" x="490" y="130" width="145" height="62" rx="6"/>
+      <text class="t" x="562" y="152" text-anchor="middle">Redis</text>
+      <text class="s" x="562" y="168" text-anchor="middle">resolved permissions</text>
+      <text class="s" x="562" y="182" text-anchor="middle">1 GiB</text>
+    </svg>
+    <figcaption>Local checks never reach this service, which is most of the reason 50 req/s covers 8k people. Sizing figures are calculated, not measured.</figcaption>
+  </figure>
+
+  <h4>A MongoDB decision worth naming</h4>
+  <p>
+    A membership stores its resolved permission array rather than joining roles at read
+    time, and the array is recomputed whenever a role changes. Minting a token becomes a
+    single indexed read instead of a lookup chain, at the cost of a write fan out when
+    someone edits a role that many people hold. Role edits are rare and token mints are
+    constant, so that trade went the right way.
+  </p>
+
+  <h2 id="learned">What I learned</h2>
+  <ul>
+    <li>Building our own looked like the expensive option, and it was still cheaper than
+      maintaining one integration per cloud plus the reviews that came with each.</li>
+    <li>Most of the difficulty was not the permission check itself. It was revocation,
+      and working out which decisions had to be auditable.</li>
+    <li>The isolation tests found more than code review did, mostly because a missing
+      tenant filter looks completely normal when you read it.</li>
+  </ul>
+
+  <hr>
+
+  <p class="small">
+    <a href="../index.html">Back to home</a> &middot;
+    <a href="knowledge-assistant.html">Knowledge assistant</a> &middot;
+    <a href="kureita.html">Kureita</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>

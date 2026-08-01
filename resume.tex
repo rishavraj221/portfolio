@@ -1,0 +1,137 @@
+\documentclass[a4paper,9pt]{article}
+
+\usepackage{parskip}
+\RequirePackage{color}
+\RequirePackage{graphicx}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage[scale=0.92, top=.34in, bottom=.34in, left=.45in, right=.45in]{geometry}
+
+\usepackage{tabularx}
+\usepackage{enumitem}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+
+\usepackage{titlesec}
+\usepackage{fontawesome5}
+\usepackage[unicode, draft=false]{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=[HTML]{4B28A4},
+    urlcolor=[HTML]{4B28A4},
+    pdftitle={Rishav Raj - Resume},
+    pdfauthor={Rishav Raj},
+}
+
+\titleformat{\section}{\normalsize\scshape\raggedright}{}{0em}{}[\vspace{-4pt}\titlerule]
+\titlespacing{\section}{0pt}{6pt}{4pt}
+
+\newenvironment{rItems}{
+  \begin{itemize}[nosep, after=\strut, leftmargin=1.2em, itemsep=2pt, topsep=2pt]
+}{
+  \end{itemize}
+}
+
+% \role{Company}{Location}{Title}{Dates}
+\newcommand{\role}[4]{%
+  \begin{tabularx}{\linewidth}{@{}X r@{}}
+    \color[HTML]{1C033C}\textbf{#1} {\small #2} & \color[HTML]{371e77}\small{#4}\\[1pt]
+    \color[HTML]{371e77}\textit{#3} &
+  \end{tabularx}%
+}
+
+% "read more" link with an open-in-new-tab icon
+\newcommand{\more}[1]{\,\href{#1}{\footnotesize read more\,\faExternalLinkAlt}}
+
+\begin{document}
+\pagestyle{empty}
+\color[HTML]{110223}
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  HEADER
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{center}
+  {\color[HTML]{1C033C}\LARGE\textbf{Rishav Raj}}\\[3pt]
+  \small
+  \href{mailto:rairishav221@gmail.com}{\faEnvelope~rairishav221@gmail.com} \;$|$\;
+  \faMobile~+91-9798600997 \;$|$\;
+  \faMapMarker~Hyderabad, India\\[2pt]
+  \href{https://YOUR-PORTFOLIO-URL}{\faGlobe~rishavraj.dev} \;$|$\;
+  \href{https://github.com/YOUR-HANDLE}{\faGithub~github.com/YOUR-HANDLE} \;$|$\;
+  \href{https://linkedin.com/in/YOUR-HANDLE}{\faLinkedin~linkedin.com/in/YOUR-HANDLE}
+\end{center}
+
+\vspace{-2pt}
+
+\section{Summary}
+\color[HTML]{1C033C}\small
+I take problems end to end: system design, proof of concept, UI, backend, cloud setup. Recent work is mostly making a language model answer real questions from a company's own documents and show where the answer came from.
+
+\section{Education}
+\color[HTML]{1C033C}\small
+\begin{tabularx}{\linewidth}{@{}X r@{}}
+  \textbf{B.Tech}, Indian Institute of Technology Madras & \color[HTML]{371e77}\small{2019 to 2023}
+\end{tabularx}
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  EXPERIENCE
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Experience}
+
+\role{Evernorth Health Services}{(Cigna Group), Hyderabad}{\textbf{Software Engineer, AI and Cloud}\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html}}{Mar 2025 to Present}
+\begin{rItems}
+  \item \textbf{Retrieval.} Three searches run in parallel: LLM article routing, Azure AI Search chunks, and a curated OKF bundle. A reasoning model reads them through tools and answers only with a citation.\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html\#retrievals}
+  \item \textbf{Ingestion.} Crawls seed articles and sub links to depth k, parses xlsx, docx, pdf and ppt attachments, and emits a routing index, search chunks and an OKF bundle.\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html\#ingestion}
+  \item \textbf{Regression testing.} Months of real mailbox threads became a golden set, scored by a judge model. Caching verdicts on a content hash made the numbers repeatable run to run.\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html\#regression}
+  \item \textbf{Caching and limits.} Two caches keyed on question, content set and corpus version, so re-ingestion retires stale answers. Token bucket at the gateway holds bursts inside model quota.\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html\#caching}
+  \item \textbf{Admin and scale.} Feedback review, ingested content as tree and graph, a retrieval test bench, analytics, each behind its own permission. Sized for 8k daily users.\more{https://YOUR-PORTFOLIO-URL/projects/knowledge-assistant.html\#admin}
+\end{rItems}
+
+\vspace{4pt}
+
+\role{Flexday AI}{Hyderabad}{\textbf{Software Developer, AI and Cloud}\more{https://YOUR-PORTFOLIO-URL/projects/rbac.html}}{Feb 2024 to Feb 2025}
+\begin{rItems}
+  \item \textbf{RBAC service.} Multi tenant, Node and Express on MongoDB, owning users, roles and machine identities. Clients sat on AWS, Azure and their own hardware, so cloud IAM could not cover them.\more{https://YOUR-PORTFOLIO-URL/projects/rbac.html\#why}
+  \item \textbf{Hybrid checks.} Coarse permissions in the JWT validate locally, resource level checks hit a central endpoint. A per tenant policy version lands a role change on the next request rather than at expiry.\more{https://YOUR-PORTFOLIO-URL/projects/rbac.html\#check}
+  \item \textbf{Tropicana chatbot.} \href{https://www.tropicanabrandsgroup.com/contactus/}{Customer facing}, GPT-4 and Elasticsearch, on AWS and the client's own servers. Cleared their security review, firewall rules and VPN setup first.
+\end{rItems}
+
+\vspace{4pt}
+
+% TODO Rishav: confirm company name, your title and the month range, then replace
+% the bullet below with the real work.
+\role{Fastail}{Location}{\textbf{Software Engineer}}{2023 to 2024}
+\begin{rItems}
+  \item \textbf{MOCK.} Replace with what you built here, owned from data model to release. One line.
+\end{rItems}
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  PROJECTS
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Projects}
+
+\begin{tabularx}{\linewidth}{@{}X r@{}}
+  \color[HTML]{1C033C}\textbf{Kureita}, node based AI video studio &
+  \color[HTML]{4B28A4}\small{\href{https://kureita.com}{kureita.com}}\more{https://YOUR-PORTFOLIO-URL/projects/kureita.html}
+\end{tabularx}
+\begin{rItems}
+  \item \textbf{Runner.} Wired nodes resolve in topological order. FastAPI on Lambda self invokes for a fresh time budget, since generation outlasts the API Gateway timeout.\more{https://YOUR-PORTFOLIO-URL/projects/kureita.html\#runner}
+  \item \textbf{Webhooks and billing.} Provider callbacks are ED25519 verified and idempotent, so a retry cannot double charge. 15k lines of Python.\more{https://YOUR-PORTFOLIO-URL/projects/kureita.html\#webhooks}
+\end{rItems}
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  SKILLS
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Skills}
+\color[HTML]{1C033C}\small
+\textbf{Search and AI:} RAG pipelines end to end, crawling and parsing a corpus, chunking, hybrid and graph search, re ranking, evals and LLM as judge, guardrails, Azure AI Search, Weaviate, OpenAI, Claude, Gemini\\[1pt]
+\textbf{Backend:} Python, FastAPI, Node.js, Express, TypeScript, MongoDB, PostgreSQL, Redis, Elasticsearch\\[1pt]
+\textbf{Infrastructure:} AWS (Lambda, ECS Fargate, EC2, S3, API Gateway, SQS, ElastiCache, CloudFront, Secrets Manager), OpenShift, Terraform, Docker, SAM, GitHub Actions, Auth0, Okta\\[1pt]
+\textbf{System design:} rate limiting (token bucket, sliding window), caching and invalidation, idempotency, queues for load levelling, sharding and replication, consistency trade offs, multi tenant isolation, RED metrics
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  PERSONAL
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Bit of personal life}
+\color[HTML]{1C033C}\small
+Training most days, gym and runs and cycling. Badminton and swimming. Out with run clubs, cycling groups and weekend treks, marathons when the calendar allows, Hyrox still pending. Road trips and long rides in between. Happy to have company for any of it.
+
+\end{document}
