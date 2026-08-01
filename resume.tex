@@ -96,11 +96,12 @@ I take problems end to end: system design, proof of concept, UI, backend, cloud 
 
 \vspace{4pt}
 
-% TODO Rishav: confirm company name, your title and the month range, then replace
-% the bullet below with the real work.
-\role{Fastail}{Location}{\textbf{Software Engineer}}{2023 to 2024}
+% TODO Rishav: confirm your exact title, the city, and the month range.
+\role{Fastail}{Hyderabad}{\textbf{Software Engineer}\more{https://rishavraj.info/projects/fastail.html}}{2023 to 2024}
 \begin{rItems}
-  \item \textbf{MOCK.} Replace with what you built here, owned from data model to release. One line.
+  \item \textbf{Social commerce feed.} Reels from local brands with ordering in the feed. Delivery area picks the candidates before engagement ranks them, using GeoJSON polygons on a 2dsphere index cached per location cell.\more{https://rishavraj.info/projects/fastail.html\#feed}
+  \item \textbf{Payments and POS.} Razorpay webhooks as the source of truth rather than the browser callback, with ranked states so a late event cannot move an order backwards. Orders push into the restaurant's Petpooja POS keyed on our order id, so a retry cannot print twice.\more{https://rishavraj.info/projects/fastail.html\#payments}
+  \item Node on Lambda, MongoDB, Cloudinary. Two engineers, I led the system design and built most of the frontend.
 \end{rItems}
 
 % ══════════════════════════════════════════════════════════════════════════════

@@ -51,6 +51,7 @@
     <li><a href="#video">Video, and why we bought it</a></li>
     <li><a href="#services">The services</a></li>
     <li><a href="#petpooja">Orders and the Petpooja bridge</a></li>
+    <li><a href="#payments">Payments and order state</a></li>
     <li><a href="#data">Data model</a></li>
     <li><a href="#deploy">Deployment</a></li>
   </ul>
@@ -332,6 +333,149 @@
       than trusted from whatever the feed was showing.
     </li>
   </ul>
+
+  <h2 id="payments">Payments and order state</h2>
+  <p>
+    Razorpay handled payments. There are three outcomes and the third one causes all the
+    trouble. A payment either captures, fails, or sits pending. UPI collect requests are
+    the pending case, and they can stay that way for several minutes while somebody finds
+    their phone. You cannot hold a spinner that long, you cannot send the order to the
+    kitchen because it might still fail, and you cannot cancel it because it might still
+    succeed.
+  </p>
+  <p>
+    The browser callback is not what we act on. It reports what the user's device thinks
+    happened, and someone who closes the tab at the wrong moment never sends it at all.
+    The webhook is the source of truth. Every one is checked against its HMAC signature
+    before anything reads the body, and the handler is idempotent because Razorpay retries
+    until it gets a 200.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 380" role="img"
+         aria-label="A Razorpay order is created at checkout, the user pays, and a signature verified webhook resolves the payment as captured, failed or pending, with pending polled until it settles.">
+      <defs>
+        <marker id="f6" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="160" y="8" width="320" height="44" rx="6"/>
+      <text class="t" x="320" y="30" text-anchor="middle">Create a Razorpay order</text>
+      <text class="s" x="320" y="46" text-anchor="middle">our order id stored as the receipt</text>
+      <path class="ar" d="M320 52 L320 70" marker-end="url(#f6)"/>
+
+      <rect class="b" x="160" y="72" width="320" height="44" rx="6"/>
+      <text class="t" x="320" y="94" text-anchor="middle">User pays</text>
+      <text class="s" x="320" y="110" text-anchor="middle">UPI, card or netbanking</text>
+
+      <path class="ard" d="M480 94 L514 94" marker-end="url(#f6)"/>
+      <rect class="b" x="516" y="74" width="122" height="42" rx="6"/>
+      <text class="s" x="577" y="92" text-anchor="middle">browser callback</text>
+      <text class="s" x="577" y="106" text-anchor="middle">is only a hint</text>
+
+      <path class="ar" d="M320 116 L320 134" marker-end="url(#f6)"/>
+
+      <rect class="b-a" x="160" y="136" width="320" height="48" rx="6"/>
+      <text class="t" x="320" y="158" text-anchor="middle">Razorpay webhook</text>
+      <text class="s" x="320" y="174" text-anchor="middle">HMAC checked, replays ignored</text>
+
+      <path class="ar" d="M320 184 L320 210"/>
+      <path class="ar" d="M105 210 L535 210"/>
+      <path class="ar" d="M105 210 L105 228" marker-end="url(#f6)"/>
+      <path class="ar" d="M320 210 L320 228" marker-end="url(#f6)"/>
+      <path class="ar" d="M535 210 L535 228" marker-end="url(#f6)"/>
+
+      <rect class="b" x="15" y="230" width="180" height="58" rx="6"/>
+      <text class="t" x="105" y="250" text-anchor="middle">captured</text>
+      <text class="s" x="105" y="266" text-anchor="middle">order confirmed,</text>
+      <text class="s" x="105" y="280" text-anchor="middle">sent to the kitchen</text>
+
+      <rect class="b" x="230" y="230" width="180" height="58" rx="6"/>
+      <text class="t" x="320" y="250" text-anchor="middle">failed</text>
+      <text class="s" x="320" y="266" text-anchor="middle">order cancelled,</text>
+      <text class="s" x="320" y="280" text-anchor="middle">nothing charged</text>
+
+      <rect class="b-a" x="445" y="230" width="180" height="58" rx="6"/>
+      <text class="t" x="535" y="250" text-anchor="middle">pending</text>
+      <text class="s" x="535" y="266" text-anchor="middle">UPI can sit here</text>
+      <text class="s" x="535" y="280" text-anchor="middle">for minutes</text>
+
+      <path class="ar" d="M535 288 L535 306" marker-end="url(#f6)"/>
+
+      <rect class="b" x="330" y="308" width="300" height="58" rx="6"/>
+      <text class="t" x="480" y="328" text-anchor="middle">Polled until it settles</text>
+      <text class="s" x="480" y="344" text-anchor="middle">past the timeout we cancel, and</text>
+      <text class="s" x="480" y="358" text-anchor="middle">refund if it captures late</text>
+    </svg>
+    <figcaption>Only the webhook branch moves an order. The dashed path from the browser is ignored.</figcaption>
+  </figure>
+
+  <p>
+    Webhooks also arrive out of order, so a captured event can land after the order has
+    already moved on. Transitions only go forward. Each state carries a rank, and an
+    update that would move an order backwards is dropped instead of applied.
+  </p>
+  <p>
+    Payment state and fulfilment state are tracked separately, because a captured payment
+    is not a confirmed order. The kitchen can still reject it. The first version collapsed
+    the two into one field, and it produced orders that read as confirmed to the customer
+    while the restaurant had never seen them.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 210" role="img"
+         aria-label="Order states move from created to paid to accepted to delivered, with a payment failure leading to cancelled and a kitchen rejection leading to refunded.">
+      <defs>
+        <marker id="f7" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="15" y="30" width="130" height="42" rx="6"/>
+      <text class="t" x="80" y="48" text-anchor="middle">created</text>
+      <text class="s" x="80" y="63" text-anchor="middle">awaiting payment</text>
+
+      <path class="ar" d="M145 51 L178 51" marker-end="url(#f7)"/>
+
+      <rect class="b-a" x="180" y="30" width="130" height="42" rx="6"/>
+      <text class="t" x="245" y="48" text-anchor="middle">paid</text>
+      <text class="s" x="245" y="63" text-anchor="middle">money captured</text>
+
+      <path class="ar" d="M310 51 L343 51" marker-end="url(#f7)"/>
+
+      <rect class="b" x="345" y="30" width="130" height="42" rx="6"/>
+      <text class="t" x="410" y="48" text-anchor="middle">accepted</text>
+      <text class="s" x="410" y="63" text-anchor="middle">kitchen has it</text>
+
+      <path class="ar" d="M475 51 L508 51" marker-end="url(#f7)"/>
+
+      <rect class="b" x="510" y="30" width="120" height="42" rx="6"/>
+      <text class="t" x="570" y="56" text-anchor="middle">delivered</text>
+
+      <path class="ar" d="M80 72 L80 148" marker-end="url(#f7)"/>
+      <text class="l" x="88" y="114">payment failed</text>
+
+      <path class="ar" d="M245 72 L245 148" marker-end="url(#f7)"/>
+      <text class="l" x="253" y="114">kitchen rejects</text>
+
+      <rect class="b" x="15" y="150" width="130" height="42" rx="6"/>
+      <text class="t" x="80" y="168" text-anchor="middle">cancelled</text>
+      <text class="s" x="80" y="183" text-anchor="middle">nothing charged</text>
+
+      <rect class="b" x="180" y="150" width="130" height="42" rx="6"/>
+      <text class="t" x="245" y="168" text-anchor="middle">refunded</text>
+      <text class="s" x="245" y="183" text-anchor="middle">money returned</text>
+    </svg>
+    <figcaption>Two axes, not one. Money can be captured while fulfilment is still undecided.</figcaption>
+  </figure>
+
+  <p>
+    When a rejection lands after capture the refund goes out automatically rather than
+    waiting for somebody to notice. The same path covers a Petpooja push that fails for
+    good, since a customer who has paid and has no food should not have to ask for the
+    money back.
+  </p>
 
   <h2 id="data">Data model</h2>
   <p>
