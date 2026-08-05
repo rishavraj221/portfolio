@@ -1,3 +1,10 @@
+# Renamed from www_redirect once the function grew a second job. Without this,
+# Terraform would destroy and recreate a function that is live on the edge.
+moved {
+  from = aws_cloudfront_function.www_redirect
+  to   = aws_cloudfront_function.viewer_request
+}
+
 resource "aws_cloudfront_origin_access_control" "site" {
   name                              = "${var.domain}-oac"
   origin_access_control_origin_type = "s3"
@@ -5,17 +12,20 @@ resource "aws_cloudfront_origin_access_control" "site" {
   signing_protocol                  = "sigv4"
 }
 
-# Runs at the edge, before origin lookup. If the host header is the www
-# domain, redirect to the apex and never touch S3.
-resource "aws_cloudfront_function" "www_redirect" {
+# Runs at the edge, before origin lookup. Two jobs: send www to the apex, and
+# resolve directory paths to their index.html. CloudFront's default_root_object
+# only covers "/", so without the rewrite a request for /notes/ looks for an S3
+# key called "notes/", which does not exist, and 404s.
+resource "aws_cloudfront_function" "viewer_request" {
   name    = "www-to-apex-redirect"
   runtime = "cloudfront-js-2.0"
-  comment = "301s www.${var.domain} to ${var.domain}"
+  comment = "www to apex redirect, and directory index rewrite"
   publish = true
   code    = <<-EOT
     function handler(event) {
       var request = event.request;
       var host = request.headers.host.value;
+
       if (host === '${var.www_domain}') {
         return {
           statusCode: 301,
@@ -25,6 +35,15 @@ resource "aws_cloudfront_function" "www_redirect" {
           }
         };
       }
+
+      var uri = request.uri;
+      if (uri.endsWith('/')) {
+        request.uri = uri + 'index.html';
+      } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+        // no file extension in the last path segment, treat it as a directory
+        request.uri = uri + '/index.html';
+      }
+
       return request;
     }
   EOT
@@ -54,7 +73,7 @@ resource "aws_cloudfront_distribution" "site" {
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.www_redirect.arn
+      function_arn = aws_cloudfront_function.viewer_request.arn
     }
   }
 
