@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Aggregation | Rishav Raj</title>
+<meta name="description" content="System design notes on log aggregation: backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<link rel="manifest" href="../site.webmanifest">
+<link rel="stylesheet" href="../style.css">
+
+<link rel="canonical" href="https://rishavraj.info/notes/log-aggregation.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Rishav Raj">
+<meta property="og:title" content="Log Aggregation | System Design Notes">
+<meta property="og:description" content="Backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<meta property="og:url" content="https://rishavraj.info/notes/log-aggregation.html">
+<meta property="og:image" content="https://rishavraj.info/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Log Aggregation | System Design Notes">
+<meta name="twitter:description" content="Backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<meta name="twitter:image" content="https://rishavraj.info/og-image.png">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="index.html">Notes</a>
+
+  <h1 class="title">Log aggregation</h1>
+  <p class="standfirst">
+    Collecting logs from every machine you run and making them searchable, without the
+    logging system becoming the thing that breaks. Notes from what people running these
+    at scale have published, with the numbers where I could find them.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">Topic</div><div class="v">System design</div></div>
+    <div class="row"><div class="k">Updated</div><div class="v">August 2026</div></div>
+  </div>
+
+  <hr>
+
+  <h2>Covered</h2>
+  <ul class="toc">
+    <li><a href="#queries">What people actually ask it</a></li>
+    <li><a href="#sizing">Sizing it first</a></li>
+    <li><a href="#collection">Getting a line off the box</a></li>
+    <li><a href="#backpressure">Backpressure, and what to drop</a></li>
+    <li><a href="#fairshare">The noisy neighbour</a></li>
+    <li><a href="#sampling">Sampling that does not lie</a></li>
+    <li><a href="#queue">The queue in the middle</a></li>
+    <li><a href="#processing">Parse, enrich, redact</a></li>
+    <li><a href="#storage">Storage and the index tradeoff</a></li>
+    <li><a href="#cardinality">Cardinality</a></li>
+    <li><a href="#retention">Retention tiering</a></li>
+    <li><a href="#failure">How it fails</a></li>
+    <li><a href="#reading">Worth reading</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="shape">The shape of it</h2>
+  <p>
+    Every design here is the same five stages. What changes between a small setup and
+    Cloudflare is where the money goes and what happens when a stage falls behind.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 275" role="img"
+         aria-label="Logs flow from a service through a node agent with a disk buffer, into Kafka, through processors, into hot indexed, warm columnar and cold object storage, all served by one query layer.">
+      <defs>
+        <marker id="n1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="10" y="24" width="130" height="44" rx="6"/>
+      <text class="t" x="75" y="43" text-anchor="middle">Service</text>
+      <text class="s" x="75" y="59" text-anchor="middle">stdout or socket</text>
+      <path class="ar" d="M140 46 L170 46" marker-end="url(#n1)"/>
+
+      <rect class="b-a" x="172" y="18" width="150" height="56" rx="6"/>
+      <text class="t" x="247" y="38" text-anchor="middle">Node agent</text>
+      <text class="s" x="247" y="54" text-anchor="middle">batch, compress,</text>
+      <text class="s" x="247" y="68" text-anchor="middle">disk buffer</text>
+      <path class="ar" d="M322 46 L354 46" marker-end="url(#n1)"/>
+
+      <rect class="b" x="356" y="24" width="130" height="44" rx="6"/>
+      <text class="t" x="421" y="43" text-anchor="middle">Kafka</text>
+      <text class="s" x="421" y="59" text-anchor="middle">shock absorber</text>
+      <path class="ar" d="M486 46 L516 46" marker-end="url(#n1)"/>
+
+      <rect class="b" x="518" y="18" width="118" height="56" rx="6"/>
+      <text class="t" x="577" y="38" text-anchor="middle">Processors</text>
+      <text class="s" x="577" y="54" text-anchor="middle">enrich, redact,</text>
+      <text class="s" x="577" y="68" text-anchor="middle">sample</text>
+
+      <path class="ar" d="M577 74 L577 94"/>
+      <path class="ar" d="M105 94 L577 94"/>
+      <path class="ar" d="M105 94 L105 114" marker-end="url(#n1)"/>
+      <path class="ar" d="M320 94 L320 114" marker-end="url(#n1)"/>
+      <path class="ar" d="M535 94 L535 114" marker-end="url(#n1)"/>
+
+      <rect class="b" x="15" y="116" width="180" height="58" rx="6"/>
+      <text class="t" x="105" y="136" text-anchor="middle">Hot</text>
+      <text class="s" x="105" y="152" text-anchor="middle">inverted index</text>
+      <text class="s" x="105" y="166" text-anchor="middle">hours to days</text>
+
+      <rect class="b" x="230" y="116" width="180" height="58" rx="6"/>
+      <text class="t" x="320" y="136" text-anchor="middle">Warm</text>
+      <text class="s" x="320" y="152" text-anchor="middle">columnar</text>
+      <text class="s" x="320" y="166" text-anchor="middle">weeks</text>
+
+      <rect class="b" x="445" y="116" width="180" height="58" rx="6"/>
+      <text class="t" x="535" y="136" text-anchor="middle">Cold</text>
+      <text class="s" x="535" y="152" text-anchor="middle">object store, Parquet</text>
+      <text class="s" x="535" y="166" text-anchor="middle">months to years</text>
+
+      <path class="ar" d="M105 174 L105 194"/>
+      <path class="ar" d="M320 174 L320 194"/>
+      <path class="ar" d="M535 174 L535 194"/>
+      <path class="ar" d="M105 194 L535 194"/>
+      <path class="ar" d="M320 194 L320 214" marker-end="url(#n1)"/>
+
+      <rect class="b-a" x="200" y="216" width="240" height="44" rx="6"/>
+      <text class="t" x="320" y="236" text-anchor="middle">Query and alerting</text>
+      <text class="s" x="320" y="252" text-anchor="middle">one API across all three</text>
+    </svg>
+    <figcaption>Five stages. The interesting decisions are all about what happens when one of them falls behind.</figcaption>
+  </figure>
+
+  <h2 id="queries">What people actually ask it</h2>
+  <p>
+    Start here, because the queries decide the storage and nothing else does.
+  </p>
+  <ul>
+    <li><strong>One request went wrong.</strong> Find every line carrying this trace id.
+      A needle in a very large haystack, almost always in the last few hours.</li>
+    <li><strong>Something is broken right now.</strong> Count errors by service and
+      version over five minutes. An aggregate, narrow and recent.</li>
+    <li><strong>Tell me when this happens again.</strong> The same aggregate, evaluated
+      on a schedule forever.</li>
+    <li><strong>Who accessed what in March.</strong> Rare, wide, old, and usually a legal
+      requirement rather than an engineering one.</li>
+  </ul>
+  <p>
+    The first three are most of the reads. The fourth is most of the bytes. A system that
+    treats all four the same is either too slow for the first three or too expensive for
+    the fourth.
+  </p>
+
+  <h2 id="sizing">Sizing it first</h2>
+  <p>
+    The arithmetic decides the architecture, so do it before choosing anything. Take a
+    mid-size setup: 400 services, 4,000 instances, 50 lines a second each at 400 bytes a
+    line.
+  </p>
+  <div class="tablewrap">
+    <table>
+      <tr><th>Quantity</th><th>Working</th><th>Result</th></tr>
+      <tr><td>Lines per second</td><td>4,000 instances x 50</td><td>200,000</td></tr>
+      <tr><td>Raw bytes per second</td><td>200,000 x 400 B</td><td>80 MB/s</td></tr>
+      <tr><td>Raw per day</td><td>80 MB/s x 86,400</td><td>~6.9 TB</td></tr>
+      <tr><td>Stored per day</td><td>at 10:1 compression</td><td>~690 GB</td></tr>
+      <tr><td>Stored per month</td><td>30 days, before tiering</td><td>~20 TB</td></tr>
+    </table>
+  </div>
+  <p>
+    For the top end, Cloudflare's logging pipeline moves close to a million log lines a
+    second, and their wider analytics pipeline was ingesting 706 million events a second
+    and 107 GiB/s of compressed data as of December 2024. That is roughly 100x their 2018
+    figure, doubling about every 18 months.
+  </p>
+  <p>
+    Two things follow. Even at mid-size, per-line overhead is a real cost, so anything you
+    do per line has to be cheap. And whatever number you plan for will double, so
+    everything wants to scale sideways.
+  </p>
+
+  <h2 id="collection">Getting a line off the box</h2>
+  <p>
+    Three options, and the tradeoff is who suffers when the backend is slow.
+  </p>
+  <ul>
+    <li><strong>In-process library, shipping directly.</strong> Simple, and the worst
+      failure mode. Your service now has a hard dependency on the log backend being up
+      and fast.</li>
+    <li><strong>Sidecar per pod.</strong> Good isolation, and you pay for the container
+      once per pod.</li>
+    <li><strong>Node agent reading everyone's output.</strong> One process per machine,
+      which is where most people end up.</li>
+  </ul>
+  <p>
+    The usual path is stdout to the container runtime to a file, with an agent tailing it.
+    The wrinkle worth knowing: on systemd hosts the journal is a single-threaded
+    bottleneck, and a very chatty service will hit it. Cloudflare has their agent listen on
+    a Unix domain socket for high-throughput services so those bypass journald entirely.
+  </p>
+  <p>
+    They also replaced syslog-ng with the OpenTelemetry Collector, and the reasons are
+    worth reading because none of them are throughput. It is written in Go rather than C,
+    so more of their engineers can work on it. It was easier to build against their
+    post-quantum crypto libraries. It reports Prometheus metrics about itself. And it let
+    them run one agent for logs and traces instead of two. Operability was the whole
+    argument.
+  </p>
+
+  <h2 id="backpressure">Backpressure, and what to drop</h2>
+  <p>
+    This is the section that matters. When the pipeline cannot keep up, something gives,
+    and the design is your choice about what.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 355" role="img"
+         aria-label="A log line is batched by the agent, shipped if downstream is healthy, otherwise spilled to a bounded local disk buffer, and when that fills the choice is between blocking the service, dropping oldest, or sampling down.">
+      <defs>
+        <marker id="n2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="190" y="8" width="260" height="34" rx="6"/>
+      <text class="t" x="320" y="30" text-anchor="middle">A log line</text>
+      <path class="ar" d="M320 42 L320 58" marker-end="url(#n2)"/>
+
+      <rect class="b" x="170" y="60" width="300" height="42" rx="6"/>
+      <text class="t" x="320" y="80" text-anchor="middle">Agent batches and compresses</text>
+      <text class="s" x="320" y="95" text-anchor="middle">adds host, service, version, deploy id</text>
+      <path class="ar" d="M320 102 L320 118" marker-end="url(#n2)"/>
+
+      <rect class="b" x="215" y="120" width="210" height="34" rx="6"/>
+      <text class="t" x="320" y="142" text-anchor="middle">downstream healthy?</text>
+
+      <path class="ar" d="M425 137 L460 137" marker-end="url(#n2)"/>
+      <text class="l" x="432" y="131">yes</text>
+      <rect class="b" x="462" y="119" width="172" height="36" rx="6"/>
+      <text class="s" x="548" y="135" text-anchor="middle">ship it,</text>
+      <text class="s" x="548" y="149" text-anchor="middle">steady state</text>
+
+      <path class="ar" d="M320 154 L320 172" marker-end="url(#n2)"/>
+      <text class="l" x="328" y="167">no</text>
+
+      <rect class="b-a" x="170" y="174" width="300" height="46" rx="6"/>
+      <text class="t" x="320" y="195" text-anchor="middle">Spill to a bounded disk buffer</text>
+      <text class="s" x="320" y="211" text-anchor="middle">survives an agent restart, rides out a queue outage</text>
+      <path class="ar" d="M320 220 L320 238" marker-end="url(#n2)"/>
+
+      <rect class="b" x="240" y="240" width="160" height="34" rx="6"/>
+      <text class="t" x="320" y="262" text-anchor="middle">buffer full?</text>
+
+      <path class="ar" d="M320 274 L320 286"/>
+      <path class="ar" d="M110 286 L530 286"/>
+      <path class="ar" d="M110 286 L110 294" marker-end="url(#n2)"/>
+      <path class="ar" d="M320 286 L320 294" marker-end="url(#n2)"/>
+      <path class="ar" d="M530 286 L530 294" marker-end="url(#n2)"/>
+
+      <rect class="b-d" x="15" y="296" width="190" height="48" rx="6"/>
+      <text class="s" x="110" y="316" text-anchor="middle">block the service</text>
+      <text class="s" x="110" y="331" text-anchor="middle">never do this</text>
+
+      <rect class="b" x="225" y="296" width="190" height="48" rx="6"/>
+      <text class="s" x="320" y="316" text-anchor="middle">drop oldest first</text>
+      <text class="s" x="320" y="331" text-anchor="middle">keeps recent context</text>
+
+      <rect class="b" x="435" y="296" width="190" height="48" rx="6"/>
+      <text class="s" x="530" y="316" text-anchor="middle">sample down</text>
+      <text class="s" x="530" y="331" text-anchor="middle">keeps the shape</text>
+    </svg>
+    <figcaption>The dashed box is the option that turns your logging system into an outage cause.</figcaption>
+  </figure>
+
+  <p>
+    A bounded local disk buffer is the primitive that earns its keep. It absorbs a queue
+    outage without involving the application, and it survives the agent being restarted
+    underneath it. Memory-only buffering dies with the process, which is exactly when you
+    wanted the logs.
+  </p>
+
+  <h2 id="fairshare">The noisy neighbour</h2>
+  <p>
+    The failure that actually happens is not the pipeline falling over. It is one service
+    shipping a bad build, emitting fifty times its usual volume, and filling the shared
+    pipe so that everyone else's logs are delayed or dropped. That happens at exactly the
+    moment those logs matter.
+  </p>
+  <p>
+    Cloudflare's answer is max-min fair share. Streams inside their allocation get through
+    untouched, and the ones over it share whatever is left. The service having a bad day
+    degrades itself rather than the platform.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 255" role="img"
+         aria-label="Three log streams enter a fixed capacity. A max-min fair share allocator lets the two normal streams through at full resolution and downsamples the one that spiked.">
+      <defs>
+        <marker id="n3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="12">Three streams, one fixed capacity</text>
+
+      <rect class="b" x="15" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="105" y="39" text-anchor="middle">service A</text>
+      <text class="s" x="105" y="55" text-anchor="middle">normal volume</text>
+
+      <rect class="b" x="230" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="320" y="39" text-anchor="middle">service B</text>
+      <text class="s" x="320" y="55" text-anchor="middle">normal volume</text>
+
+      <rect class="b-a" x="445" y="20" width="180" height="44" rx="6"/>
+      <text class="t" x="535" y="39" text-anchor="middle">service C</text>
+      <text class="s" x="535" y="55" text-anchor="middle">50x, bad deploy</text>
+
+      <path class="ar" d="M105 64 L105 84"/>
+      <path class="ar" d="M320 64 L320 84"/>
+      <path class="ar" d="M535 64 L535 84"/>
+      <path class="ar" d="M105 84 L535 84"/>
+      <path class="ar" d="M320 84 L320 104" marker-end="url(#n3)"/>
+
+      <rect class="b-a" x="140" y="106" width="360" height="50" rx="6"/>
+      <text class="t" x="320" y="127" text-anchor="middle">Max-min fair share</text>
+      <text class="s" x="320" y="143" text-anchor="middle">inside your allocation you keep everything</text>
+
+      <path class="ar" d="M320 156 L320 174"/>
+      <path class="ar" d="M105 174 L535 174"/>
+      <path class="ar" d="M105 174 L105 194" marker-end="url(#n3)"/>
+      <path class="ar" d="M320 174 L320 194" marker-end="url(#n3)"/>
+      <path class="ar" d="M535 174 L535 194" marker-end="url(#n3)"/>
+
+      <rect class="b" x="15" y="196" width="180" height="40" rx="6"/>
+      <text class="t" x="105" y="221" text-anchor="middle">A at 100%</text>
+
+      <rect class="b" x="230" y="196" width="180" height="40" rx="6"/>
+      <text class="t" x="320" y="221" text-anchor="middle">B at 100%</text>
+
+      <rect class="b" x="445" y="196" width="180" height="40" rx="6"/>
+      <text class="t" x="535" y="221" text-anchor="middle">C sampled to fit</text>
+    </svg>
+    <figcaption>Cloudflare pushes the same stream at 100%, 10% and 1% into separate topics, and the query layer drops to a coarser one when things are hot.</figcaption>
+  </figure>
+
+  <h2 id="sampling">Sampling that does not lie</h2>
+  <p>
+    If you sample, every event has to carry the rate it was kept at, so counts can be
+    scaled back up and you can put a confidence interval on an estimate. Cloudflare stores
+    the sample interval per event and uses a Horvitz-Thompson estimator for sums and
+    averages.
+  </p>
+  <p>
+    There is a subtlety here that cost them a real bug, and it is the best thing in any of
+    this to remember.
+  </p>
+  <p>
+    Systematic sampling, keeping every nth event, looks equivalent to random sampling. It
+    is not, when arrival order correlates with what you are measuring. Their responses
+    arrive in bursts where the large ones come first, because a full HTML page is served
+    before the small cached assets that follow it. Taking every nth event kept the large
+    responses disproportionately, and size estimates came out high.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 205" role="img"
+         aria-label="Events in a burst arrive largest first. Taking every fourth in arrival order picks disproportionately large events, so shuffling before sampling is required.">
+      <defs>
+        <marker id="n4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="14">One burst, arrival order left to right, height is response size</text>
+
+      <rect class="b-a" x="15"  y="50" width="68" height="50" rx="3"/>
+      <rect class="b"   x="91"  y="56" width="68" height="44" rx="3"/>
+      <rect class="b"   x="167" y="62" width="68" height="38" rx="3"/>
+      <rect class="b"   x="243" y="70" width="68" height="30" rx="3"/>
+      <rect class="b-a" x="319" y="76" width="68" height="24" rx="3"/>
+      <rect class="b"   x="395" y="80" width="68" height="20" rx="3"/>
+      <rect class="b"   x="471" y="84" width="68" height="16" rx="3"/>
+      <rect class="b"   x="547" y="88" width="68" height="12" rx="3"/>
+
+      <text class="l" x="0" y="120">highlighted are every 4th in arrival order, so the sample runs large</text>
+
+      <path class="ar" d="M320 130 L320 148" marker-end="url(#n4)"/>
+
+      <rect class="b-a" x="140" y="150" width="360" height="46" rx="6"/>
+      <text class="t" x="320" y="171" text-anchor="middle">Shuffle first, then take every nth</text>
+      <text class="s" x="320" y="187" text-anchor="middle">the sampler was fine, the assumption about order was not</text>
+    </svg>
+    <figcaption>Sampled average of the highlighted two is 37 units against a true average of 29. A quiet, systematic overestimate.</figcaption>
+  </figure>
+
+  <h2 id="queue">The queue in the middle</h2>
+  <p>
+    A queue between collection and storage decouples how fast logs are produced from how
+    fast they can be indexed. Kafka is the default answer and a good one.
+  </p>
+  <p>
+    Retention is the number to think hardest about, because it is your outage budget.
+    Cloudflare keeps enough to tolerate around eight hours of consumer downtime with no
+    data loss. Pick it from how long you would realistically need to fix a broken consumer
+    on a bad night, then add margin, because the bad night is when you find out.
+  </p>
+  <p>
+    Partitioning is the other decision. You want related lines together and load spread
+    evenly, and Cloudflare partitions on host and service name. Note what that costs them:
+    the syslog protocol carries only microsecond timestamps, so a service emitting faster
+    than that has no reliable ordering, and ordering becomes best effort rather than a
+    guarantee. Worth knowing before you promise anyone ordered logs.
+  </p>
+
+  <h2 id="processing">Parse, enrich, redact</h2>
+  <ul>
+    <li><strong>Parse.</strong> Structured at the source beats regex after the fact. If
+      services emit JSON with consistent field names you avoid an entire category of
+      problem. Grok patterns over unstructured text are where these pipelines rot.</li>
+    <li><strong>Enrich.</strong> Attach what you will want to filter on later: region,
+      cluster, service version, deploy id. The deploy id is what turns "errors went up"
+      into "errors went up in the build that shipped at 14:20".</li>
+    <li><strong>Redact.</strong> PII comes out here, before storage. Redacting at query
+      time means the raw data is already sitting in your index, which is not a position
+      you want to defend in an audit.</li>
+  </ul>
+
+  <h2 id="storage">Storage and the index tradeoff</h2>
+  <p>
+    Three families, and the whole difference is how much index you build on write.
+  </p>
+  <div class="tablewrap">
+    <table>
+      <tr><th>Approach</th><th>Indexes</th><th>Stored for 100 GB/day raw</th><th>Weak at</th></tr>
+      <tr>
+        <td>Inverted index<br><span class="muted small">Elasticsearch, OpenSearch</span></td>
+        <td>every token</td>
+        <td>~500 GB</td>
+        <td>write throughput, storage cost</td>
+      </tr>
+      <tr>
+        <td>Label index<br><span class="muted small">Loki</span></td>
+        <td>labels only</td>
+        <td>~30 GB plus a small index</td>
+        <td>high cardinality, ad hoc search</td>
+      </tr>
+      <tr>
+        <td>Columnar<br><span class="muted small">ClickHouse, Parquet on S3</span></td>
+        <td>sparse, sorted</td>
+        <td>~30 to 50 GB</td>
+        <td>true full text, schema drift</td>
+      </tr>
+    </table>
+  </div>
+  <p>
+    The industry has moved. Cloudflare ran a 90-node Elasticsearch cluster and has been
+    migrating to ClickHouse, and Uber went the same way. The logic is that log queries are
+    mostly filter-then-aggregate over recent data, which is what columnar engines are built
+    for, while a full-text inverted index charges you on every write for a generality most
+    log queries never use.
+  </p>
+
+  <h2 id="cardinality">Cardinality</h2>
+  <p>
+    The failure specific to label-indexed systems, and easy to walk into.
+  </p>
+  <p>
+    A label with unbounded values creates a separate stream per value. Put a request id or
+    a user id in a label and one stream becomes millions, the index stops being small, and
+    the only reason you chose the system in the first place is gone.
+  </p>
+  <p>
+    The rule that holds: labels are for things you filter by that have a bounded set of
+    values. Service, environment, level, region. Everything else belongs in the line body,
+    where finding it costs a scan instead of an index entry.
+  </p>
+
+  <h2 id="retention">Retention tiering</h2>
+  <p>
+    Most of your bytes are old and most of your reads are recent, so one storage tier is
+    either too expensive or too slow. The inversion is the whole argument for tiering.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 215" role="img"
+         aria-label="Logs move from hot indexed storage to warm columnar to cold object storage. Most bytes sit in cold storage while most reads are served from hot.">
+      <defs>
+        <marker id="n5" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b-a" x="15" y="20" width="190" height="60" rx="6"/>
+      <text class="t" x="110" y="40" text-anchor="middle">Hot, 0 to 7 days</text>
+      <text class="s" x="110" y="56" text-anchor="middle">indexed, fast search</text>
+      <text class="s" x="110" y="70" text-anchor="middle">nearly all reads</text>
+      <path class="ar" d="M205 50 L233 50" marker-end="url(#n5)"/>
+
+      <rect class="b" x="235" y="20" width="190" height="60" rx="6"/>
+      <text class="t" x="330" y="40" text-anchor="middle">Warm, 7 to 30 days</text>
+      <text class="s" x="330" y="56" text-anchor="middle">columnar, aggregates</text>
+      <text class="s" x="330" y="70" text-anchor="middle">dashboards and trends</text>
+      <path class="ar" d="M425 50 L453 50" marker-end="url(#n5)"/>
+
+      <rect class="b" x="455" y="20" width="175" height="60" rx="6"/>
+      <text class="t" x="542" y="40" text-anchor="middle">Cold, 30 days on</text>
+      <text class="s" x="542" y="56" text-anchor="middle">Parquet on object store</text>
+      <text class="s" x="542" y="70" text-anchor="middle">audit, rarely read</text>
+
+      <text class="l" x="15" y="118">bytes stored</text>
+      <rect class="b-a" x="15"  y="124" width="58"  height="26" rx="3"/>
+      <text class="s" x="44" y="141" text-anchor="middle">hot</text>
+      <rect class="b"   x="75"  y="124" width="128" height="26" rx="3"/>
+      <text class="s" x="139" y="141" text-anchor="middle">warm</text>
+      <rect class="b"   x="205" y="124" width="420" height="26" rx="3"/>
+      <text class="s" x="415" y="141" text-anchor="middle">cold</text>
+
+      <text class="l" x="15" y="172">reads served</text>
+      <rect class="b-a" x="15"  y="178" width="430" height="26" rx="3"/>
+      <text class="s" x="230" y="195" text-anchor="middle">hot</text>
+      <rect class="b"   x="447" y="178" width="120" height="26" rx="3"/>
+      <text class="s" x="507" y="195" text-anchor="middle">warm</text>
+      <rect class="b"   x="569" y="178" width="56"  height="26" rx="3"/>
+      <text class="s" x="597" y="195" text-anchor="middle">cold</text>
+    </svg>
+    <figcaption>The two bars are roughly inverses of each other, which is the entire reason to tier rather than buy one big cluster.</figcaption>
+  </figure>
+
+  <p>
+    Set retention per class rather than globally. Debug logs at seven days and audit logs
+    at seven years travel the same pipeline and are completely different products, priced
+    differently and read differently.
+  </p>
+
+  <h2 id="failure">How it fails</h2>
+  <ul>
+    <li><strong>It logs into itself.</strong> If the logging pipeline ships its own logs
+      through the logging pipeline, an outage takes out the tooling you would use to
+      diagnose the outage. It needs a separate, dumber path for its own telemetry.</li>
+    <li><strong>Volume spikes during incidents.</strong> Errors multiply log lines, so
+      demand peaks exactly when you most need the system. Capacity planned for the average
+      is capacity planned for the wrong day.</li>
+    <li><strong>Thundering herd on recovery.</strong> A network partition heals and every
+      agent flushes its disk buffer at once. Jitter the retry, or the recovery becomes the
+      second outage.</li>
+    <li><strong>Clock skew.</strong> "The last five minutes" is ambiguous across a fleet
+      with drifting clocks. Store event time and ingest time separately and know which one
+      each query means.</li>
+    <li><strong>Silent parse failures.</strong> A line that fails to parse and gets
+      dropped is invisible by definition. Count them, expose the count, and alert on the
+      rate rather than the total.</li>
+  </ul>
+
+  <h2 id="reading">Worth reading</h2>
+  <ul class="list">
+    <li>
+      <a href="https://blog.cloudflare.com/an-overview-of-cloudflares-logging-pipeline/">An overview of Cloudflare's logging pipeline</a>
+      <span class="note">The syslog-ng setup, Kafka buffering, the dead letter queue, and the eight hour outage tolerance.</span>
+    </li>
+    <li>
+      <a href="https://blog.cloudflare.com/how-we-make-sense-of-too-much-data/">Over 700 million events per second</a>
+      <span class="note">December 2024. Bottomless buffers, max-min fairness, and the systematic sampling bias bug.</span>
+    </li>
+    <li>
+      <a href="https://blog.cloudflare.com/adopting-opentelemetry-for-our-logging-pipeline/">Adopting OpenTelemetry for our logging pipeline</a>
+      <span class="note">Why they swapped syslog-ng for the OTel Collector, and why none of the reasons were performance.</span>
+    </li>
+    <li>
+      <a href="https://doris.apache.org/blog/Building-A-Log-Analytics-Solution-10-Times-More-Cost-Effective-Than-Elasticsearch/">Inverted index against lightweight index</a>
+      <span class="note">The storage cost comparison behind the table above.</span>
+    </li>
+  </ul>
+
+  <hr>
+
+  <p class="small">
+    <a href="index.html">All notes</a> &middot;
+    <a href="../index.html">Home</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>
