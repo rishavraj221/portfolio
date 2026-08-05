@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log Aggregation | Rishav Raj</title>
-<meta name="description" content="System design notes on log aggregation: backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<meta name="description" content="A system design walkthrough for log aggregation, told through a fictional ride-hailing company building its logging pipeline one piece at a time, with real numbers from Cloudflare's.">
 <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -16,14 +16,14 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Rishav Raj">
 <meta property="og:title" content="Log Aggregation | System Design Notes">
-<meta property="og:description" content="Backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<meta property="og:description" content="A ride-hailing company builds a logging pipeline one piece at a time, with real numbers from Cloudflare's.">
 <meta property="og:url" content="https://rishavraj.info/notes/log-aggregation.html">
 <meta property="og:image" content="https://rishavraj.info/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Log Aggregation | System Design Notes">
-<meta name="twitter:description" content="Backpressure, sampling, the index tradeoff, cardinality and retention tiering, with real numbers from Cloudflare's pipeline.">
+<meta name="twitter:description" content="A ride-hailing company builds a logging pipeline one piece at a time, with real numbers from Cloudflare's.">
 <meta name="twitter:image" content="https://rishavraj.info/og-image.png">
 </head>
 <body>
@@ -34,9 +34,10 @@
 
   <h1 class="title">Log aggregation</h1>
   <p class="standfirst">
-    Collecting logs from every machine you run and making them searchable, without the
-    logging system becoming the thing that breaks. Notes from what people running these
-    at scale have published, with the numbers where I could find them.
+    Told through a company I made up, called Northlane. It is a ride-hailing and delivery
+    app, loosely modeled on how a company like Uber actually grows, with the name changed
+    and the story simplified. The engineering problem and the numbers where I cite them
+    are real.
   </p>
 
   <div class="rows small">
@@ -48,173 +49,110 @@
 
   <h2>Covered</h2>
   <ul class="toc">
-    <li><a href="#queries">What people actually ask it</a></li>
-    <li><a href="#sizing">Sizing it first</a></li>
-    <li><a href="#collection">Getting a line off the box</a></li>
-    <li><a href="#backpressure">Backpressure, and what to drop</a></li>
-    <li><a href="#fairshare">The noisy neighbour</a></li>
-    <li><a href="#sampling">Sampling that does not lie</a></li>
+    <li><a href="#incident">The night it went wrong</a></li>
+    <li><a href="#requirements">What the system had to do</a></li>
+    <li><a href="#collection">Getting logs off the fleet</a></li>
+    <li><a href="#backpressure">Not losing anything when something breaks</a></li>
+    <li><a href="#fairshare">Keeping one bad night contained</a></li>
+    <li><a href="#sampling">Making the numbers trustworthy</a></li>
     <li><a href="#queue">The queue in the middle</a></li>
-    <li><a href="#processing">Parse, enrich, redact</a></li>
-    <li><a href="#storage">Storage and the index tradeoff</a></li>
-    <li><a href="#cardinality">Cardinality</a></li>
-    <li><a href="#retention">Retention tiering</a></li>
-    <li><a href="#failure">How it fails</a></li>
+    <li><a href="#processing">Cleaning it up on the way in</a></li>
+    <li><a href="#storage">Paying for storage</a></li>
+    <li><a href="#cardinality">The near miss</a></li>
+    <li><a href="#retention">Not keeping everything forever</a></li>
+    <li><a href="#operating">Running it for a year</a></li>
+    <li><a href="#cloudflare">The same problem, further along</a></li>
     <li><a href="#reading">Worth reading</a></li>
   </ul>
 
   <hr>
 
-  <h2 id="shape">The shape of it</h2>
+  <h2 id="incident">The night it went wrong</h2>
   <p>
-    Every design here is the same five stages. What changes between a small setup and
-    Cloudflare is where the money goes and what happens when a stage falls behind.
+    Northlane is three years old. Rides in nine cities, food delivery layered on top,
+    around 400 backend services owned by maybe 30 teams. On a Friday night during a big
+    local event, the payments service started double charging riders on a small
+    percentage of trips.
+  </p>
+  <p>
+    Nobody on call could tell what percentage, or which cities, or when it started. The
+    payments service alone ran on 60 machines, and each one wrote its own log file. Finding
+    every line for one affected trip meant SSHing into boxes one at a time and grepping for
+    a trip id, hoping you picked the right box first. It took the on-call engineer close to
+    two hours to confirm the bug and scope it. The fix itself took twenty minutes.
+  </p>
+  <p>
+    The postmortem had one real finding. The bug was ordinary, a retry that did not check
+    whether the first charge had already gone through. What made it expensive was that
+    nobody could see it happening. Northlane had metrics and dashboards, but nothing that
+    let you ask "show me everything that happened to trip 88213" and get an answer in under
+    an hour.
   </p>
 
-  <figure>
-    <svg class="fig" viewBox="0 0 640 275" role="img"
-         aria-label="Logs flow from a service through a node agent with a disk buffer, into Kafka, through processors, into hot indexed, warm columnar and cold object storage, all served by one query layer.">
-      <defs>
-        <marker id="n1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
-        </marker>
-      </defs>
-
-      <rect class="b" x="10" y="24" width="130" height="44" rx="6"/>
-      <text class="t" x="75" y="43" text-anchor="middle">Service</text>
-      <text class="s" x="75" y="59" text-anchor="middle">stdout or socket</text>
-      <path class="ar" d="M140 46 L170 46" marker-end="url(#n1)"/>
-
-      <rect class="b-a" x="172" y="18" width="150" height="56" rx="6"/>
-      <text class="t" x="247" y="38" text-anchor="middle">Node agent</text>
-      <text class="s" x="247" y="54" text-anchor="middle">batch, compress,</text>
-      <text class="s" x="247" y="68" text-anchor="middle">disk buffer</text>
-      <path class="ar" d="M322 46 L354 46" marker-end="url(#n1)"/>
-
-      <rect class="b" x="356" y="24" width="130" height="44" rx="6"/>
-      <text class="t" x="421" y="43" text-anchor="middle">Kafka</text>
-      <text class="s" x="421" y="59" text-anchor="middle">shock absorber</text>
-      <path class="ar" d="M486 46 L516 46" marker-end="url(#n1)"/>
-
-      <rect class="b" x="518" y="18" width="118" height="56" rx="6"/>
-      <text class="t" x="577" y="38" text-anchor="middle">Processors</text>
-      <text class="s" x="577" y="54" text-anchor="middle">enrich, redact,</text>
-      <text class="s" x="577" y="68" text-anchor="middle">sample</text>
-
-      <path class="ar" d="M577 74 L577 94"/>
-      <path class="ar" d="M105 94 L577 94"/>
-      <path class="ar" d="M105 94 L105 114" marker-end="url(#n1)"/>
-      <path class="ar" d="M320 94 L320 114" marker-end="url(#n1)"/>
-      <path class="ar" d="M535 94 L535 114" marker-end="url(#n1)"/>
-
-      <rect class="b" x="15" y="116" width="180" height="58" rx="6"/>
-      <text class="t" x="105" y="136" text-anchor="middle">Hot</text>
-      <text class="s" x="105" y="152" text-anchor="middle">inverted index</text>
-      <text class="s" x="105" y="166" text-anchor="middle">hours to days</text>
-
-      <rect class="b" x="230" y="116" width="180" height="58" rx="6"/>
-      <text class="t" x="320" y="136" text-anchor="middle">Warm</text>
-      <text class="s" x="320" y="152" text-anchor="middle">columnar</text>
-      <text class="s" x="320" y="166" text-anchor="middle">weeks</text>
-
-      <rect class="b" x="445" y="116" width="180" height="58" rx="6"/>
-      <text class="t" x="535" y="136" text-anchor="middle">Cold</text>
-      <text class="s" x="535" y="152" text-anchor="middle">object store, Parquet</text>
-      <text class="s" x="535" y="166" text-anchor="middle">months to years</text>
-
-      <path class="ar" d="M105 174 L105 194"/>
-      <path class="ar" d="M320 174 L320 194"/>
-      <path class="ar" d="M535 174 L535 194"/>
-      <path class="ar" d="M105 194 L535 194"/>
-      <path class="ar" d="M320 194 L320 214" marker-end="url(#n1)"/>
-
-      <rect class="b-a" x="200" y="216" width="240" height="44" rx="6"/>
-      <text class="t" x="320" y="236" text-anchor="middle">Query and alerting</text>
-      <text class="s" x="320" y="252" text-anchor="middle">one API across all three</text>
-    </svg>
-    <figcaption>Five stages. The interesting decisions are all about what happens when one of them falls behind.</figcaption>
-  </figure>
-
-  <h2 id="queries">What people actually ask it</h2>
+  <h2 id="requirements">What the system had to do</h2>
   <p>
-    Start here, because the queries decide the storage and nothing else does.
+    The team that came out of that postmortem wrote down what they actually needed before
+    picking any tools. Two lists.
   </p>
+  <h4>Functional</h4>
   <ul>
-    <li><strong>One request went wrong.</strong> Find every line carrying this trace id.
-      A needle in a very large haystack, almost always in the last few hours.</li>
-    <li><strong>Something is broken right now.</strong> Count errors by service and
-      version over five minutes. An aggregate, narrow and recent.</li>
-    <li><strong>Tell me when this happens again.</strong> The same aggregate, evaluated
-      on a schedule forever.</li>
-    <li><strong>Who accessed what in March.</strong> Rare, wide, old, and usually a legal
-      requirement rather than an engineering one.</li>
+    <li>Pull every log line for one trip or one request, across every service it touched,
+      by an id.</li>
+    <li>Count errors by service, city and app version over the last few minutes, and page
+      someone when that count crosses a threshold.</li>
+    <li>Hold payment related logs for seven years, for a regulator who might ask about a
+      specific transaction long after anyone remembers it.</li>
+  </ul>
+  <h4>Non-functional</h4>
+  <ul>
+    <li>The logging system cannot become a second outage. A slow or down log backend must
+      never block a ride request or a payment.</li>
+    <li>No log line goes missing because of a deploy, a network blip, or a traffic spike,
+      within reason.</li>
+    <li>One service having a bad night should not crowd out every other service's logs at
+      the same time.</li>
+    <li>A search over the last day comes back in seconds. A compliance pull from three
+      years back can take minutes, nobody is timing that one.</li>
+    <li>Cost has to grow slower than traffic, because traffic was not going to stop
+      growing.</li>
   </ul>
   <p>
-    The first three are most of the reads. The fourth is most of the bytes. A system that
-    treats all four the same is either too slow for the first three or too expensive for
-    the fourth.
+    Everything below is Northlane building toward that list, one piece at a time, and what
+    changed each time a piece landed.
   </p>
 
-  <h2 id="sizing">Sizing it first</h2>
+  <h2 id="collection">Getting logs off the fleet</h2>
   <p>
-    The arithmetic decides the architecture, so do it before choosing anything. Take a
-    mid-size setup: 400 services, 4,000 instances, 50 lines a second each at 400 bytes a
-    line.
-  </p>
-  <div class="tablewrap">
-    <table>
-      <tr><th>Quantity</th><th>Working</th><th>Result</th></tr>
-      <tr><td>Lines per second</td><td>4,000 instances x 50</td><td>200,000</td></tr>
-      <tr><td>Raw bytes per second</td><td>200,000 x 400 B</td><td>80 MB/s</td></tr>
-      <tr><td>Raw per day</td><td>80 MB/s x 86,400</td><td>~6.9 TB</td></tr>
-      <tr><td>Stored per day</td><td>at 10:1 compression</td><td>~690 GB</td></tr>
-      <tr><td>Stored per month</td><td>30 days, before tiering</td><td>~20 TB</td></tr>
-    </table>
-  </div>
-  <p>
-    For the top end, Cloudflare's logging pipeline moves close to a million log lines a
-    second, and their wider analytics pipeline was ingesting 706 million events a second
-    and 107 GiB/s of compressed data as of December 2024. That is roughly 100x their 2018
-    figure, doubling about every 18 months.
-  </p>
-  <p>
-    Two things follow. Even at mid-size, per-line overhead is a real cost, so anything you
-    do per line has to be cheap. And whatever number you plan for will double, so
-    everything wants to scale sideways.
-  </p>
-
-  <h2 id="collection">Getting a line off the box</h2>
-  <p>
-    Three options, and the tradeoff is who suffers when the backend is slow.
+    First decision: how does a line of text get off a machine and into a place where it
+    can be searched.
   </p>
   <ul>
-    <li><strong>In-process library, shipping directly.</strong> Simple, and the worst
-      failure mode. Your service now has a hard dependency on the log backend being up
-      and fast.</li>
-    <li><strong>Sidecar per pod.</strong> Good isolation, and you pay for the container
-      once per pod.</li>
-    <li><strong>Node agent reading everyone's output.</strong> One process per machine,
-      which is where most people end up.</li>
+    <li><strong>Ship straight from the app.</strong> The service calls the log backend
+      directly. Rejected fast, because now a slow log backend is a slow ride request,
+      which breaks the first non-functional requirement on day one.</li>
+    <li><strong>A sidecar container per service.</strong> Safer, but Northlane runs
+      thousands of containers, and a sidecar on every one adds up in memory and cost.</li>
+    <li><strong>One agent per machine, reading everyone's output.</strong> What they went
+      with. Services write to stdout like always, a single agent tails it and ships it
+      onward.</li>
   </ul>
   <p>
-    The usual path is stdout to the container runtime to a file, with an agent tailing it.
-    The wrinkle worth knowing: on systemd hosts the journal is a single-threaded
-    bottleneck, and a very chatty service will hit it. Cloudflare has their agent listen on
-    a Unix domain socket for high-throughput services so those bypass journald entirely.
+    A wrinkle they hit almost immediately: on their newer hosts, systemd's journal is
+    single threaded, and their busiest service, the one that streams live driver
+    locations, was fast enough to back up behind it. Cloudflare hit the identical problem
+    and has its own agent read from a Unix socket for high volume services instead of
+    going through the journal at all. Northlane copied that.
   </p>
   <p>
-    They also replaced syslog-ng with the OpenTelemetry Collector, and the reasons are
-    worth reading because none of them are throughput. It is written in Go rather than C,
-    so more of their engineers can work on it. It was easier to build against their
-    post-quantum crypto libraries. It reports Prometheus metrics about itself. And it let
-    them run one agent for logs and traces instead of two. Operability was the whole
-    argument.
+    With the agent in place, the two hour SSH hunt from the incident became a search box.
+    Not a fast search yet, and not a cheap one, but a search.
   </p>
 
-  <h2 id="backpressure">Backpressure, and what to drop</h2>
+  <h2 id="backpressure">Not losing anything when something breaks</h2>
   <p>
-    This is the section that matters. When the pipeline cannot keep up, something gives,
-    and the design is your choice about what.
+    The agent shipping logs somewhere is not the whole design. The real question is what
+    happens when that somewhere is slow or unreachable, which happens more often than
+    anyone likes to admit.
   </p>
 
   <figure>
@@ -263,7 +201,7 @@
 
       <rect class="b-d" x="15" y="296" width="190" height="48" rx="6"/>
       <text class="s" x="110" y="316" text-anchor="middle">block the service</text>
-      <text class="s" x="110" y="331" text-anchor="middle">never do this</text>
+      <text class="s" x="110" y="331" text-anchor="middle">breaks requirement one</text>
 
       <rect class="b" x="225" y="296" width="190" height="48" rx="6"/>
       <text class="s" x="320" y="316" text-anchor="middle">drop oldest first</text>
@@ -273,27 +211,35 @@
       <text class="s" x="530" y="316" text-anchor="middle">sample down</text>
       <text class="s" x="530" y="331" text-anchor="middle">keeps the shape</text>
     </svg>
-    <figcaption>The dashed box is the option that turns your logging system into an outage cause.</figcaption>
+    <figcaption>Northlane's platform team put this decision in writing, so nobody had to make it during an incident.</figcaption>
   </figure>
 
   <p>
-    A bounded local disk buffer is the primitive that earns its keep. It absorbs a queue
-    outage without involving the application, and it survives the agent being restarted
-    underneath it. Memory-only buffering dies with the process, which is exactly when you
-    wanted the logs.
+    They picked a bounded local disk buffer on every machine. It absorbs a queue outage
+    without the app ever noticing, and it survives the agent itself restarting, which a
+    memory-only buffer would not. Blocking the service was ruled out outright, since that
+    is the one outcome that turns a logging hiccup into a ride-booking outage.
+  </p>
+  <p>
+    Three months later, a routine upgrade to the message queue went wrong and took it down
+    for twenty minutes. Every service kept running. The buffer filled, held, and drained
+    once the queue came back. Nobody outside the platform team noticed. That was the first
+    time the disk buffer earned its cost.
   </p>
 
-  <h2 id="fairshare">The noisy neighbour</h2>
+  <h2 id="fairshare">Keeping one bad night contained</h2>
   <p>
-    The failure that actually happens is not the pipeline falling over. It is one service
-    shipping a bad build, emitting fifty times its usual volume, and filling the shared
-    pipe so that everyone else's logs are delayed or dropped. That happens at exactly the
-    moment those logs matter.
+    A different kind of failure showed up a few months after that. A bad deploy in the
+    driver-matching service put it into a retry loop, and its log volume jumped to fifty
+    times normal. That volume shared a pipe with every other service, so payments and
+    trip-tracking logs started arriving late during the exact window someone would have
+    wanted to look at them.
   </p>
   <p>
-    Cloudflare's answer is max-min fair share. Streams inside their allocation get through
-    untouched, and the ones over it share whatever is left. The service having a bad day
-    degrades itself rather than the platform.
+    Cloudflare, who deal with this at a much bigger scale, use max-min fair share: every
+    stream gets an allocation, streams under it pass through untouched, and only the ones
+    over it get squeezed to fit what capacity remains. Northlane implemented a simpler
+    version of the same idea.
   </p>
 
   <figure>
@@ -305,19 +251,19 @@
         </marker>
       </defs>
 
-      <text class="l" x="0" y="12">Three streams, one fixed capacity</text>
+      <text class="l" x="0" y="12">Three services, one shared pipe</text>
 
       <rect class="b" x="15" y="20" width="180" height="44" rx="6"/>
-      <text class="t" x="105" y="39" text-anchor="middle">service A</text>
+      <text class="t" x="105" y="39" text-anchor="middle">payments</text>
       <text class="s" x="105" y="55" text-anchor="middle">normal volume</text>
 
       <rect class="b" x="230" y="20" width="180" height="44" rx="6"/>
-      <text class="t" x="320" y="39" text-anchor="middle">service B</text>
+      <text class="t" x="320" y="39" text-anchor="middle">trip tracking</text>
       <text class="s" x="320" y="55" text-anchor="middle">normal volume</text>
 
       <rect class="b-a" x="445" y="20" width="180" height="44" rx="6"/>
-      <text class="t" x="535" y="39" text-anchor="middle">service C</text>
-      <text class="s" x="535" y="55" text-anchor="middle">50x, bad deploy</text>
+      <text class="t" x="535" y="39" text-anchor="middle">driver matching</text>
+      <text class="s" x="535" y="55" text-anchor="middle">50x, retry loop</text>
 
       <path class="ar" d="M105 64 L105 84"/>
       <path class="ar" d="M320 64 L320 84"/>
@@ -336,34 +282,39 @@
       <path class="ar" d="M535 174 L535 194" marker-end="url(#n3)"/>
 
       <rect class="b" x="15" y="196" width="180" height="40" rx="6"/>
-      <text class="t" x="105" y="221" text-anchor="middle">A at 100%</text>
+      <text class="t" x="105" y="221" text-anchor="middle">payments at 100%</text>
 
       <rect class="b" x="230" y="196" width="180" height="40" rx="6"/>
-      <text class="t" x="320" y="221" text-anchor="middle">B at 100%</text>
+      <text class="t" x="320" y="221" text-anchor="middle">tracking at 100%</text>
 
       <rect class="b" x="445" y="196" width="180" height="40" rx="6"/>
-      <text class="t" x="535" y="221" text-anchor="middle">C sampled to fit</text>
+      <text class="t" x="535" y="221" text-anchor="middle">matching, sampled to fit</text>
     </svg>
-    <figcaption>Cloudflare pushes the same stream at 100%, 10% and 1% into separate topics, and the query layer drops to a coarser one when things are hot.</figcaption>
+    <figcaption>The service in the retry loop degrades itself. Everyone else's logs keep arriving on schedule.</figcaption>
   </figure>
 
-  <h2 id="sampling">Sampling that does not lie</h2>
   <p>
-    If you sample, every event has to carry the rate it was kept at, so counts can be
-    scaled back up and you can put a confidence interval on an estimate. Cloudflare stores
-    the sample interval per event and uses a Horvitz-Thompson estimator for sums and
-    averages.
+    The next time a service misbehaved this way, payments logs kept arriving on time, and
+    the on-call engineer for driver matching had a smaller, sampled view of their own
+    mess, which was still enough to diagnose it.
+  </p>
+
+  <h2 id="sampling">Making the numbers trustworthy</h2>
+  <p>
+    Sampling brings its own problem: once a stream is downsampled, any count or average
+    built from it has to be corrected back up, or your dashboards quietly lie. The fix is
+    to store the sampling rate alongside each kept event, so a count of 1 at a 1-in-100
+    rate is understood as roughly 100.
   </p>
   <p>
-    There is a subtlety here that cost them a real bug, and it is the best thing in any of
-    this to remember.
-  </p>
-  <p>
-    Systematic sampling, keeping every nth event, looks equivalent to random sampling. It
-    is not, when arrival order correlates with what you are measuring. Their responses
-    arrive in bursts where the large ones come first, because a full HTML page is served
-    before the small cached assets that follow it. Taking every nth event kept the large
-    responses disproportionately, and size estimates came out high.
+    This is where Northlane's story stops and a real one is worth telling, because
+    Cloudflare wrote up a mistake in exactly this step that is worth knowing about before
+    you make it yourself. They sampled by keeping every nth event in arrival order, which
+    looks the same as random sampling and is not. Their web responses tend to arrive
+    largest first within a burst, since a full page renders before the small cached assets
+    behind it. Taking every nth event kept the large responses more often than the small
+    ones, and every size estimate downstream came out too high, quietly, until someone
+    checked.
   </p>
 
   <figure>
@@ -394,44 +345,57 @@
       <text class="t" x="320" y="171" text-anchor="middle">Shuffle first, then take every nth</text>
       <text class="s" x="320" y="187" text-anchor="middle">the sampler was fine, the assumption about order was not</text>
     </svg>
-    <figcaption>Sampled average of the highlighted two is 37 units against a true average of 29. A quiet, systematic overestimate.</figcaption>
+    <figcaption>Sampled average of the two highlighted events: 37 units. True average: 29. Cloudflare published this, and it is a cheap mistake to avoid once you know it exists.</figcaption>
   </figure>
+
+  <p>
+    Northlane's engineers read that writeup while building their own sampler and shuffled
+    before sampling from the start, before it ever became their own bug to find.
+  </p>
 
   <h2 id="queue">The queue in the middle</h2>
   <p>
-    A queue between collection and storage decouples how fast logs are produced from how
-    fast they can be indexed. Kafka is the default answer and a good one.
+    Between the agents and storage sits a queue, Kafka in Northlane's case, and it does
+    one job well: it lets logs be produced faster than they can be indexed, for a while,
+    without anything falling over.
   </p>
   <p>
-    Retention is the number to think hardest about, because it is your outage budget.
-    Cloudflare keeps enough to tolerate around eight hours of consumer downtime with no
-    data loss. Pick it from how long you would realistically need to fix a broken consumer
-    on a bad night, then add margin, because the bad night is when you find out.
+    The number worth arguing about is retention, since it is your outage budget in disk
+    space. Northlane sized theirs around how long it would realistically take to fix a
+    broken consumer at three in the morning, then added a wide margin, because that
+    estimate is always optimistic when you make it in daylight. They landed on six hours,
+    close to what Cloudflare has said publicly they target for the same reason.
   </p>
   <p>
-    Partitioning is the other decision. You want related lines together and load spread
-    evenly, and Cloudflare partitions on host and service name. Note what that costs them:
-    the syslog protocol carries only microsecond timestamps, so a service emitting faster
-    than that has no reliable ordering, and ordering becomes best effort rather than a
-    guarantee. Worth knowing before you promise anyone ordered logs.
+    Partitioning came with a smaller cost they didn't expect. They partition by service and
+    host, same as Cloudflare, and their transport protocol only carries millisecond
+    timestamps. A service logging faster than that has no guaranteed order within a
+    millisecond, so "ordered logs" became "logs that are ordered almost all of the time,"
+    which they wrote down and told people, rather than letting someone discover it during
+    an audit.
   </p>
 
-  <h2 id="processing">Parse, enrich, redact</h2>
+  <h2 id="processing">Cleaning it up on the way in</h2>
   <ul>
-    <li><strong>Parse.</strong> Structured at the source beats regex after the fact. If
-      services emit JSON with consistent field names you avoid an entire category of
-      problem. Grok patterns over unstructured text are where these pipelines rot.</li>
-    <li><strong>Enrich.</strong> Attach what you will want to filter on later: region,
-      cluster, service version, deploy id. The deploy id is what turns "errors went up"
-      into "errors went up in the build that shipped at 14:20".</li>
-    <li><strong>Redact.</strong> PII comes out here, before storage. Redacting at query
-      time means the raw data is already sitting in your index, which is not a position
-      you want to defend in an audit.</li>
+    <li><strong>Parse.</strong> Northlane's older services logged plain text sentences,
+      and every dashboard built on them needed a regex that broke the next time someone
+      reworded a log line. Newer services emit structured JSON with fixed field names, and
+      that category of breakage mostly went away.</li>
+    <li><strong>Enrich.</strong> Every line gets tagged with region, service version and a
+      deploy id on the way in. That last one turned "errors went up" into "errors went up
+      in the build that shipped at 9:40pm," which is a much shorter conversation.</li>
+    <li><strong>Redact.</strong> Rider phone numbers and card fragments get stripped before
+      anything is written to disk, not filtered out at query time. Query-time redaction
+      means the raw data already exists somewhere, which is a hard thing to explain to a
+      security auditor.</li>
   </ul>
 
-  <h2 id="storage">Storage and the index tradeoff</h2>
+  <h2 id="storage">Paying for storage</h2>
   <p>
-    Three families, and the whole difference is how much index you build on write.
+    The first storage layer Northlane stood up was Elasticsearch, because it was familiar
+    and the full text search was genuinely good. Within a year the cluster was the single
+    largest infrastructure line item the platform team owned, ahead of the databases
+    actually running the product.
   </p>
   <div class="tablewrap">
     <table>
@@ -457,32 +421,34 @@
     </table>
   </div>
   <p>
-    The industry has moved. Cloudflare ran a 90-node Elasticsearch cluster and has been
-    migrating to ClickHouse, and Uber went the same way. The logic is that log queries are
-    mostly filter-then-aggregate over recent data, which is what columnar engines are built
-    for, while a full-text inverted index charges you on every write for a generality most
-    log queries never use.
+    Most of what people actually asked of the system was filter by service and time range,
+    then aggregate, which a columnar store does well without paying for a full inverted
+    index on every write. Northlane moved onto ClickHouse for anything past a week old and
+    kept a small, short-lived Elasticsearch index for the truly recent, truly free-text
+    searches. Cloudflare made close to the same move, off a 90-node Elasticsearch cluster
+    onto ClickHouse, and Uber did as well. The storage bill dropped by more than half.
   </p>
 
-  <h2 id="cardinality">Cardinality</h2>
+  <h2 id="cardinality">The near miss</h2>
   <p>
-    The failure specific to label-indexed systems, and easy to walk into.
+    A well-meaning engineer added the rider's user id as a label on every trip log line,
+    reasoning that it would make "show me this rider's history" a fast lookup. It shipped
+    on a Thursday. By Friday the label index had gone from a few hundred stable values to
+    several million, and query latency across the whole dashboard had climbed noticeably.
   </p>
   <p>
-    A label with unbounded values creates a separate stream per value. Put a request id or
-    a user id in a label and one stream becomes millions, the index stops being small, and
-    the only reason you chose the system in the first place is gone.
-  </p>
-  <p>
-    The rule that holds: labels are for things you filter by that have a bounded set of
-    values. Service, environment, level, region. Everything else belongs in the line body,
-    where finding it costs a scan instead of an index entry.
+    It was caught before it became an incident, but only because someone happened to check
+    the dashboard's load time that week. The fix was to move the user id into the line
+    body instead of a label, where finding it costs a scan rather than an index entry. The
+    rule that came out of it: a label is for a field with a small, known set of values,
+    service, region, level. Anything that can grow without bound stays in the body.
   </p>
 
-  <h2 id="retention">Retention tiering</h2>
+  <h2 id="retention">Not keeping everything forever</h2>
   <p>
-    Most of your bytes are old and most of your reads are recent, so one storage tier is
-    either too expensive or too slow. The inversion is the whole argument for tiering.
+    Most of what Northlane stores is old, and most of what gets read is recent. One tier
+    of storage for everything was either too expensive to hold years of history or too
+    slow for the searches people ran fifty times a day.
   </p>
 
   <figure>
@@ -527,33 +493,63 @@
       <rect class="b"   x="569" y="178" width="56"  height="26" rx="3"/>
       <text class="s" x="597" y="195" text-anchor="middle">cold</text>
     </svg>
-    <figcaption>The two bars are roughly inverses of each other, which is the entire reason to tier rather than buy one big cluster.</figcaption>
+    <figcaption>Northlane's own numbers, roughly: 95% of reads land in the top bar, which holds under a tenth of the stored bytes.</figcaption>
   </figure>
 
   <p>
-    Set retention per class rather than globally. Debug logs at seven days and audit logs
-    at seven years travel the same pipeline and are completely different products, priced
-    differently and read differently.
+    Debug logs age out at seven days. Payment logs, the ones the whole project started
+    over, sit in cold object storage for seven years to satisfy the regulator, and are
+    read maybe once a quarter. Same pipeline, two completely different retention rules,
+    set on purpose rather than by default.
   </p>
 
-  <h2 id="failure">How it fails</h2>
+  <h2 id="operating">Running it for a year</h2>
+  <p>
+    A short list of things Northlane learned by living with the system rather than by
+    designing it.
+  </p>
   <ul>
-    <li><strong>It logs into itself.</strong> If the logging pipeline ships its own logs
-      through the logging pipeline, an outage takes out the tooling you would use to
-      diagnose the outage. It needs a separate, dumber path for its own telemetry.</li>
-    <li><strong>Volume spikes during incidents.</strong> Errors multiply log lines, so
-      demand peaks exactly when you most need the system. Capacity planned for the average
-      is capacity planned for the wrong day.</li>
-    <li><strong>Thundering herd on recovery.</strong> A network partition heals and every
-      agent flushes its disk buffer at once. Jitter the retry, or the recovery becomes the
-      second outage.</li>
-    <li><strong>Clock skew.</strong> "The last five minutes" is ambiguous across a fleet
-      with drifting clocks. Store event time and ingest time separately and know which one
-      each query means.</li>
-    <li><strong>Silent parse failures.</strong> A line that fails to parse and gets
-      dropped is invisible by definition. Count them, expose the count, and alert on the
-      rate rather than the total.</li>
+    <li><strong>It logs into itself, carefully.</strong> The logging pipeline's own
+      telemetry travels a separate, simpler path. Early on it shipped its own logs through
+      itself, and a pipeline outage briefly took out the one tool that would have explained
+      the outage.</li>
+    <li><strong>Incidents multiply log volume.</strong> An error path tends to log more than
+      the happy path, so pipeline load rises during the same window an engineer is trying
+      to use it. Capacity planned around a normal Tuesday did not cover a bad Friday.</li>
+    <li><strong>Recoveries can be their own outage.</strong> When a network partition
+      healed, every agent's disk buffer flushed at once and briefly looked like a second
+      spike. Adding jitter to the retry spread that out.</li>
+    <li><strong>Clocks disagree.</strong> "The last five minutes" meant something slightly
+      different on every host until event time and ingest time were stored as two separate
+      fields, and every query picked one on purpose.</li>
+    <li><strong>A dropped line is invisible unless you count it.</strong> Parse failures
+      get counted and alerted on by rate, since a line that fails to parse and gets
+      silently discarded leaves no other trace that it existed.</li>
   </ul>
+
+  <h2 id="cloudflare">The same problem, further along</h2>
+  <p>
+    Northlane is invented, sized to be relatable rather than impressive. It's worth
+    knowing what this looks like at the far end of the same curve, at a company that
+    publishes real numbers.
+  </p>
+  <p>
+    Cloudflare's logging pipeline moves close to a million log lines a second across their
+    network, and the wider data pipeline behind their analytics was handling 706 million
+    events a second and 107 GiB/s of compressed data as of December 2024, about 100 times
+    their 2018 figure. In 2024 they also replaced syslog-ng, which had run their collection
+    layer for years, with the OpenTelemetry Collector. None of their stated reasons were
+    about speed. It is written in Go instead of C, so more of their own engineers can work
+    on it, it was easier to build against their internal cryptography libraries, it exposes
+    its own Prometheus metrics, and it let them stop running separate agents for logs and
+    for traces. A mature team's biggest infrastructure migration in years, justified almost
+    entirely by how much easier the result is to operate.
+  </p>
+  <p>
+    That is the same order of priority Northlane's much smaller team ended up with:
+    correctness and operability first, raw throughput a distant second, because throughput
+    was rarely what was actually breaking.
+  </p>
 
   <h2 id="reading">Worth reading</h2>
   <ul class="list">
@@ -567,7 +563,7 @@
     </li>
     <li>
       <a href="https://blog.cloudflare.com/adopting-opentelemetry-for-our-logging-pipeline/">Adopting OpenTelemetry for our logging pipeline</a>
-      <span class="note">Why they swapped syslog-ng for the OTel Collector, and why none of the reasons were performance.</span>
+      <span class="note">Why they swapped syslog-ng for the OTel Collector in 2024, and why none of the reasons were performance.</span>
     </li>
     <li>
       <a href="https://doris.apache.org/blog/Building-A-Log-Analytics-Solution-10-Times-More-Cost-Effective-Than-Elasticsearch/">Inverted index against lightweight index</a>
