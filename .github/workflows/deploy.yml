@@ -18,6 +18,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build site (Vite + React, statically generated)
+        working-directory: web
+        run: npm run build
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,16 +41,9 @@ jobs:
 
       - name: Sync site to S3
         run: |
-          aws s3 sync . s3://rishavraj.info \
+          aws s3 sync web/dist s3://rishavraj.info \
             --delete \
-            --exclude ".git/*" \
-            --exclude ".github/*" \
-            --exclude "infra/*" \
-            --exclude "*.tex" \
-            --exclude "og-card.html" \
-            --exclude "secret.csv" \
-            --exclude ".DS_Store" \
-            --exclude ".gitignore"
+            --exclude ".DS_Store"
 
       - name: Invalidate CloudFront cache
         run: |

@@ -1,0 +1,6 @@
+/* Utilities only, no preflight/base — site.css already owns global
+   typography and resets for the content pages. This exists purely so
+   interactive components (diagrams, the chat demo UI) can use Tailwind
+   utility classes without Tailwind's base layer fighting site.css. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
