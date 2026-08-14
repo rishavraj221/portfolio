@@ -22,6 +22,7 @@ export const routes: RouteRecord[] = [
       { path: "projects/kureita.html", lazy: () => import("./pages/projects/Kureita") },
       { path: "system-design/", lazy: () => import("./pages/system-design/Index") },
       { path: "system-design/chat-application.html", lazy: () => import("./pages/system-design/ChatApplication") },
+      { path: "system-design/chat-demo-log.html", lazy: () => import("./pages/system-design/ChatDemoLog") },
     ],
   },
 ];
