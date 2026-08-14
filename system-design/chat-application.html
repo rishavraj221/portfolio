@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Designing a Chat Application | Rishav Raj</title>
+<meta name="description" content="A system design walkthrough for a WhatsApp-style chat application, told through a fictional messaging startup, with real numbers and decisions from WhatsApp's own engineering history.">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<link rel="manifest" href="../site.webmanifest">
+<link rel="stylesheet" href="../style.css">
+
+<link rel="canonical" href="https://rishavraj.info/system-design/chat-application.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Rishav Raj">
+<meta property="og:title" content="Designing a Chat Application | System Design Notes">
+<meta property="og:description" content="A messaging startup builds a WhatsApp-style chat system one piece at a time, with real numbers from WhatsApp's own engineering history.">
+<meta property="og:url" content="https://rishavraj.info/system-design/chat-application.html">
+<meta property="og:image" content="https://rishavraj.info/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Designing a Chat Application | System Design Notes">
+<meta name="twitter:description" content="A messaging startup builds a WhatsApp-style chat system one piece at a time.">
+<meta name="twitter:image" content="https://rishavraj.info/og-image.png">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="index.html">System design</a>
+
+  <h1 class="title">Designing a chat application</h1>
+  <p class="standfirst">
+    Told through a company I made up, called Wavelink. It is a messaging app, loosely
+    modeled on how WhatsApp actually grew, with the name changed and the story
+    simplified. The engineering problems and the numbers where I cite them are real.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">Topic</div><div class="v">System design</div></div>
+    <div class="row"><div class="k">Updated</div><div class="v">August 2026</div></div>
+  </div>
+
+  <hr>
+
+  <h2>Covered</h2>
+  <ul class="toc">
+    <li><a href="#incident">The problem with polling</a></li>
+    <li><a href="#requirements">What the system had to do</a></li>
+    <li><a href="#connections">Keeping a connection open</a></li>
+    <li><a href="#delivery">Getting a message from A to B</a></li>
+    <li><a href="#offline">When the other person is not online</a></li>
+    <li><a href="#acks">Sent, delivered, read</a></li>
+    <li><a href="#ordering">Ordering and duplicates</a></li>
+    <li><a href="#groups">Fanout for group chats</a></li>
+    <li><a href="#media">Photos and videos without a huge message</a></li>
+    <li><a href="#scale">One server, two million connections</a></li>
+    <li><a href="#storage">Not keeping messages forever</a></li>
+    <li><a href="#encryption">Encrypting a message the server cannot read</a></li>
+    <li><a href="#presence">Presence and typing, on purpose left lossy</a></li>
+    <li><a href="#reading">Worth reading</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="incident">The problem with polling</h2>
+  <p>
+    Wavelink starts as a weekend project: a chat screen bolted onto an existing app.
+    The first version has each client ask the server "anything new for me?" every three
+    seconds. It works for a demo. At a few thousand users it is already indefensible:
+    most requests come back empty, the database takes the same load whether anyone is
+    typing or not, and a message sent right after someone's poll still takes up to three
+    seconds to show up.
+  </p>
+  <p>
+    The fix that actually matters is not a smarter poll interval, it is dropping polling
+    entirely. A chat app is not really a request-response problem. It is closer to two
+    people holding a phone line open, where either side can talk at any moment. That
+    reframing is what the rest of this is built on.
+  </p>
+
+  <h2 id="requirements">What the system had to do</h2>
+  <h4>Functional</h4>
+  <ul>
+    <li>Send a text message from one user to another, or to a group, and have it show
+      up on every device that user is signed in on.</li>
+    <li>Tell the sender whether the message reached the server, reached the recipient's
+      device, and was read.</li>
+    <li>Deliver a message sent while the recipient was offline, once they come back.</li>
+    <li>Send photos and video without making every text message pay for it.</li>
+  </ul>
+  <h4>Non-functional</h4>
+  <ul>
+    <li>A message from a sender online to a recipient online should arrive in well
+      under a second, not on a polling interval.</li>
+    <li>No message gets silently dropped because a server restarted or a phone lost
+      signal for ten seconds.</li>
+    <li>The server operator should not be able to read message content, even if
+      compelled to hand over everything it stores.</li>
+    <li>One server holding open a connection for every signed-in user has to be cheap
+      per connection, because idle connections vastly outnumber active ones at any
+      moment.</li>
+  </ul>
+
+  <h2 id="connections">Keeping a connection open</h2>
+  <p>
+    Once polling is off the table, each client needs a connection the server can push
+    down at any time. A raw TCP socket, wrapped in TLS, kept open for as long as the app
+    is running, is the simplest version of this. WebSockets are the same idea dressed to
+    survive corporate proxies and browsers.
+  </p>
+  <p>
+    The part that is easy to miss: almost every one of these connections is idle almost
+    all the time. A user opens the app, it connects, and then nothing happens for
+    minutes. Wavelink's first production servers ran each connection as its own OS
+    thread, which is fine at a few thousand users and falls over near ten thousand,
+    because a thread's stack and scheduling overhead cost real memory and CPU even when
+    it is doing nothing.
+  </p>
+  <p>
+    The fix is an event loop, or in Erlang's case a process model built for exactly
+    this: a huge number of very cheap, independently scheduled units, each one just
+    waiting on its own socket. WhatsApp built its backend on Erlang for this reason
+    specifically, and later published that a single server, tuned, held a little over
+    two million concurrent connections. That number is not from a bigger machine, it is
+    from a runtime whose per-connection cost is a few kilobytes instead of a thread.
+  </p>
+
+  <h2 id="delivery">Getting a message from A to B</h2>
+  <p>
+    With a connection open, a message from A to B has to cross the server exactly once
+    but never gets sent client to client directly, since either side can be behind a
+    firewall or NAT that makes them unreachable from outside.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 260" role="img"
+         aria-label="Client A sends a message over its open connection to the server. The server writes it to B's per-user queue. If B is connected, the server pushes it immediately over B's open connection.">
+      <defs>
+        <marker id="n1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="15" y="20" width="150" height="40" rx="6"/>
+      <text class="t" x="90" y="45" text-anchor="middle">Client A</text>
+      <path class="ar" d="M165 40 L233 40" marker-end="url(#n1)"/>
+      <text class="l" x="90" y="14" text-anchor="middle">sends, over its open connection</text>
+
+      <rect class="b-a" x="235" y="20" width="170" height="40" rx="6"/>
+      <text class="t" x="320" y="45" text-anchor="middle">Server, A's shard</text>
+      <path class="ar" d="M320 60 L320 96" marker-end="url(#n1)"/>
+
+      <rect class="b" x="220" y="98" width="200" height="42" rx="6"/>
+      <text class="t" x="320" y="119" text-anchor="middle">write to B's queue</text>
+      <text class="s" x="320" y="133" text-anchor="middle">durable, per-recipient</text>
+
+      <path class="ar" d="M320 140 L320 160"/>
+      <path class="ar" d="M170 178 L320 160"/>
+      <path class="ar" d="M470 178 L320 160"/>
+      <path class="ar" d="M170 178 L170 196" marker-end="url(#n1)"/>
+      <path class="ar" d="M470 178 L470 196" marker-end="url(#n1)"/>
+      <text class="l" x="205" y="172">B online</text>
+      <text class="l" x="440" y="172">B offline</text>
+
+      <rect class="b-a" x="80" y="198" width="180" height="46" rx="6"/>
+      <text class="t" x="170" y="219" text-anchor="middle">push now</text>
+      <text class="s" x="170" y="235" text-anchor="middle">over B's open connection</text>
+
+      <rect class="b" x="380" y="198" width="180" height="46" rx="6"/>
+      <text class="t" x="470" y="219" text-anchor="middle">sits in the queue</text>
+      <text class="s" x="470" y="235" text-anchor="middle">pushed when B reconnects</text>
+    </svg>
+    <figcaption>The queue write happens either way. Whether B gets it now or on reconnect is just whether a connection happens to be open.</figcaption>
+  </figure>
+
+  <p>
+    Writing to a per-recipient queue before trying to push is what makes this durable.
+    If the push attempt is skipped and the server only tries to deliver to connected
+    users, a message sent in the half second B's phone loses signal is gone. Writing
+    first means delivery is a guarantee the queue makes, and pushing to an open
+    connection is just an optimization for the common case.
+  </p>
+
+  <h2 id="offline">When the other person is not online</h2>
+  <p>
+    The per-user queue is the whole answer to offline delivery: nothing special has to
+    happen, because the message was already durably written there when it was sent. The
+    interesting design question is what a client does the moment it reconnects.
+  </p>
+  <p>
+    Wavelink's client sends the id of the last message it has seen, and the server
+    replays the queue from that point forward. This has a sharp edge: if the client
+    stores that id wrong, or a bug resets it, the client either replays messages it
+    already has or, worse, skips ones it never received. Wavelink learned this the hard
+    way when a client-side bug persisted the wrong id after a crash, and a slice of
+    users quietly missed messages for a week before anyone reported it, because a
+    missing message produces no error, just silence.
+  </p>
+
+  <h2 id="acks">Sent, delivered, read</h2>
+  <p>
+    Three separate facts, each true at a different point in the message's life, and
+    each one needs its own acknowledgment traveling back to the sender.
+  </p>
+  <ul>
+    <li><strong>Sent.</strong> The server accepted the message and wrote it to the
+      recipient's queue. This says nothing about the recipient at all, only that the
+      message will not be lost.</li>
+    <li><strong>Delivered.</strong> The recipient's device received it. This ack comes
+      from the recipient's client, not the server, so a phone that is on but has the
+      app killed by the OS never sends it.</li>
+    <li><strong>Read.</strong> The recipient's client opened the conversation. This is
+      the one users expect to be able to turn off, since it reveals behavior the other
+      two do not.</li>
+  </ul>
+  <p>
+    Each ack is itself a small message traveling the same path in reverse, through the
+    same per-user queue and push mechanism as the original message. There is no separate
+    acknowledgment channel, which keeps the delivery guarantees identical for messages
+    and for the acks about them.
+  </p>
+
+  <h2 id="ordering">Ordering and duplicates</h2>
+  <p>
+    Two failure modes show up together often enough that they get solved with the same
+    mechanism. A flaky connection makes the client retry a send it is not sure went
+    through, which risks a duplicate. A server restart mid-delivery risks a message
+    arriving out of order relative to one sent moments later through a different server
+    process.
+  </p>
+  <p>
+    The client assigns each message a unique id before it ever leaves the device. The
+    server treats that id as the deduplication key: if the same id arrives twice, the
+    second one is dropped, and the sender still gets back a "sent" ack either way, so a
+    retry after a dropped ack is indistinguishable from a first attempt to the sender.
+    Ordering within a single conversation is kept by having every message for that
+    conversation pass through the same queue, so replays and pushes stay in the order
+    they were written, without needing a global clock.
+  </p>
+
+  <h2 id="groups">Fanout for group chats</h2>
+  <p>
+    A group message is not one message, it is one message that has to become several,
+    one per member. The design question is when that fanout happens.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 220" role="img"
+         aria-label="Fanout on write copies the message into every group member's own queue at send time. Fanout on read stores it once and each member's client asks for it, which is cheaper to write but slower to read.">
+      <defs>
+        <marker id="n6" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="15" y="15" width="150" height="36" rx="6"/>
+      <text class="t" x="90" y="38" text-anchor="middle">one group message</text>
+
+      <path class="ar" d="M165 33 L233 33" marker-end="url(#n6)"/>
+      <text class="l" x="170" y="26">fanout on write</text>
+
+      <rect class="b-a" x="235" y="15" width="200" height="36" rx="6"/>
+      <text class="t" x="335" y="38" text-anchor="middle">copied into every member's queue</text>
+
+      <path class="ar" d="M335 51 L335 70"/>
+      <path class="ar" d="M170 70 L500 70"/>
+      <path class="ar" d="M170 70 L170 90" marker-end="url(#n6)"/>
+      <path class="ar" d="M335 70 L335 90" marker-end="url(#n6)"/>
+      <path class="ar" d="M500 70 L500 90" marker-end="url(#n6)"/>
+
+      <rect class="b" x="105" y="92" width="130" height="34" rx="6"/>
+      <text class="s" x="170" y="113" text-anchor="middle">member 1's queue</text>
+      <rect class="b" x="270" y="92" width="130" height="34" rx="6"/>
+      <text class="s" x="335" y="113" text-anchor="middle">member 2's queue</text>
+      <rect class="b" x="435" y="92" width="130" height="34" rx="6"/>
+      <text class="s" x="500" y="113" text-anchor="middle">member N's queue</text>
+
+      <text class="l" x="0" y="150">write cost scales with group size, read stays a single, cheap queue read</text>
+      <text class="l" x="0" y="168">fanout on read would store the message once and have each client ask, cheaper to write, slower and more complex to read</text>
+    </svg>
+    <figcaption>Wavelink fans out on write. Groups are capped, so the write cost stays bounded, and the read path stays identical to a one to one chat.</figcaption>
+  </figure>
+
+  <p>
+    Fanout on write is the more expensive option per send, one write per member instead
+    of one, but it keeps the read path trivially simple: a client's "give me my new
+    messages" logic never needs to know whether a message came from a person or a
+    group. That simplicity is worth more than the write cost as long as group size stays
+    bounded, which is exactly why messaging apps cap group size rather than letting it
+    grow the way, say, a Twitter following list can. WhatsApp's own group limit has moved
+    over the years, from 256 up to 1024, but it has always been a fixed ceiling rather
+    than unbounded, for precisely this reason.
+  </p>
+
+  <h2 id="media">Photos and videos without a huge message</h2>
+  <p>
+    Wavelink's first attempt sent image bytes inline in the same message payload that
+    carries text. It works until someone sends a ten megabyte video into a group of two
+    hundred people, and the fanout from the previous section turns one upload into two
+    hundred copies of ten megabytes moving through the messaging pipeline meant for
+    kilobyte-sized text.
+  </p>
+  <p>
+    The fix is to take media out of the messaging path entirely. The client uploads the
+    file to a separate blob store first and gets back a reference, and the chat message
+    that actually fans out to every member is small: a reference, a thumbnail, and
+    metadata. The two hundred recipients each fetch the full file once, on their own
+    schedule, from storage built for that, not from the low-latency messaging pipeline.
+    The messaging system's job stays "deliver a small, ordered stream of events,"
+    which is the job it was actually designed for.
+  </p>
+
+  <h2 id="scale">One server, two million connections</h2>
+  <p>
+    Wavelink's connection layer eventually needs to hold millions of mostly-idle
+    connections, and the honest question is how many of those one server can carry
+    before the answer is just "add more servers."
+  </p>
+  <p>
+    WhatsApp published the answer they arrived at in detail: a FreeBSD box, tuned kernel
+    parameters for socket buffers and file descriptor limits, and an Erlang process per
+    connection, held a little over two million concurrent connections on a single
+    machine. The interesting part of that story is not the final number, it is that most
+    of the work was removing artificial ceilings the OS and runtime impose by default,
+    not adding hardware.
+  </p>
+  <p>
+    Past a single machine's ceiling, connections get sharded by user id, usually with
+    consistent hashing so that adding a shard does not reshuffle every existing
+    connection's assignment. A user's messages always route through their assigned
+    shard first, which is why the earlier delivery diagram labeled the first server "A's
+    shard": that is a specific, addressable server, not a generic pool.
+  </p>
+
+  <h2 id="storage">Not keeping messages forever</h2>
+  <p>
+    Once a message has been delivered and acknowledged, does the server still need it?
+    Wavelink's answer, and WhatsApp's stated one, is no. Messages sit in a user's queue
+    only until delivered, and undelivered messages expire after a bounded window, on
+    the order of a month, rather than being retained indefinitely.
+  </p>
+  <p>
+    This is a real product tradeoff, not a free simplification. It means a user cannot
+    install the app on a new phone and pull down five years of chat history from the
+    server, the way an email client can. Wavelink pushes history onto the device instead
+    and lets users back it up themselves, which keeps the server's storage bill flat as
+    the user base grows, instead of growing with the full lifetime volume of every
+    message anyone has ever sent.
+  </p>
+
+  <h2 id="encryption">Encrypting a message the server cannot read</h2>
+  <p>
+    One of the non-functional requirements above was that the operator should not be
+    able to read message content even under compulsion. That requirement shapes storage
+    more than it shapes any single component: if the server cannot decrypt a message, it
+    also cannot search it, index it, or moderate its content server-side, which rules
+    out a whole category of features other systems get almost for free.
+  </p>
+  <p>
+    The mechanism WhatsApp adopted, after partnering with Open Whisper Systems, is the
+    Signal Protocol's double ratchet: each message uses a new derived key, so that even
+    if one key is later compromised, past and future messages in the same conversation
+    stay unreadable from it. The server's role shrinks to exactly what the earlier
+    sections describe, moving encrypted bytes through queues in order, with no ability
+    to look inside them. Delivery, ordering, and dedup all still work, because none of
+    that needs the content, only the envelope: sender, recipient, message id.
+  </p>
+
+  <h2 id="presence">Presence and typing, on purpose left lossy</h2>
+  <p>
+    "Online now" and "typing…" look like they belong in the same durable, ordered
+    system as everything above. They do not. Presence is a snapshot of the current
+    moment, not an event with lasting meaning: nobody needs to know that a friend was
+    typing four hours ago the way they need to know a message existed four hours ago.
+  </p>
+  <p>
+    Wavelink keeps presence as ephemeral, in-memory state on whichever shard a user is
+    connected to, pushed to the small set of people currently viewing that
+    conversation, with no durable write and no delivery guarantee at all. If a
+    "typing" event gets dropped on a bad connection, nothing retries it, because the
+    next keystroke will send a fresher one in a second anyway. Treating presence with
+    the same durability machinery as messages would have meant paying queue and storage
+    costs for information that is often stale before it would even finish writing.
+  </p>
+
+  <h2 id="reading">Worth reading</h2>
+  <ul class="list">
+    <li>
+      <a href="https://blog.whatsapp.com/1-million-is-so-2011">1 million is so 2011</a>
+      <span class="note">WhatsApp's 2012 writeup on Erlang, FreeBSD kernel tuning, and pushing a single server's connection count past a million.</span>
+    </li>
+    <li>
+      <a href="https://signal.org/blog/whatsapp/">Open Whisper Systems partners with WhatsApp</a>
+      <span class="note">The 2014 announcement that started rolling the Signal Protocol's double ratchet out across WhatsApp.</span>
+    </li>
+    <li>
+      <a href="https://signal.org/blog/whatsapp-complete/">WhatsApp's Signal Protocol integration is now complete</a>
+      <span class="note">Full end-to-end encryption across every WhatsApp message and call, including groups and media.</span>
+    </li>
+  </ul>
+
+  <hr>
+
+  <p class="small">
+    <a href="index.html">All system design notes</a> &middot;
+    <a href="../index.html">Home</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>
