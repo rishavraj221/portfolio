@@ -32,13 +32,6 @@ export function Component() {
               off a thread per connection.
             </span>
           </li>
-          <li>
-            <a href="chat-demo-log.html">Building the chat demo</a>
-            <span className="note">
-              The build log for the design above: registration, delivery ticks, presence,
-              multi-device sync, and notifications, phase by phase.
-            </span>
-          </li>
         </ul>
 
         <p className="muted small">More coming as I work through them.</p>
