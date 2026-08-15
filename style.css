@@ -64,6 +64,35 @@ hr{border:0; border-top:1px solid var(--rule); margin:38px 0}
 .list a{font-weight:500}
 .list .note{display:block; color:var(--ink-soft); font-size:14px; margin-top:1px}
 
+/* ---------- glossary term with hover tooltip ---------- */
+.term{
+  position:relative;
+  color:var(--ink-bright);
+  border-bottom:1px dotted var(--underline);
+  cursor:help;
+}
+.term::after{
+  content:attr(data-tip);
+  position:absolute;
+  left:50%; top:calc(100% + 7px);
+  transform:translate(-50%,-4px);
+  width:max-content; max-width:min(260px,80vw);
+  background:var(--wash); color:var(--ink);
+  font:12.5px/1.45 var(--sans);
+  padding:8px 10px; border-radius:6px;
+  border:1px solid var(--rule);
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+  opacity:0; visibility:hidden;
+  transition:opacity .12s ease, transform .12s ease;
+  pointer-events:none;
+  z-index:20;
+}
+.term:hover::after, .term:focus::after{
+  opacity:1; visibility:visible;
+  transform:translate(-50%,0);
+}
+.term:focus{outline:none}
+
 /* ---------- table of contents ---------- */
 .toc{list-style:none; margin:0; padding:0}
 .toc li{margin:0 0 8px}

@@ -108,7 +108,14 @@ export function useWavelink(userId: string | null, onNotificationClick?: (conver
         const isOpenAndFocused = activeConversationRef.current === payload.conversation_id && document.hasFocus();
         if (!isOpenAndFocused) {
           notifyMessage(
-            { id: payload.message_id, conversation_id: payload.conversation_id, from: payload.from, body: payload.body, inserted_at: payload.inserted_at },
+            {
+              id: payload.message_id,
+              conversation_id: payload.conversation_id,
+              from: payload.from,
+              body: payload.body,
+              inserted_at: payload.inserted_at,
+              media_id: null,
+            },
             () => onNotificationClickRef.current?.(payload.conversation_id),
           );
         }
@@ -206,9 +213,23 @@ export function useWavelink(userId: string | null, onNotificationClick?: (conver
 
       channel.on(
         "ack",
-        (payload: { client_msg_id?: string; message_id: string; status: string }) => {
+        (payload: { client_msg_id?: string; message_id?: string; status: string; reason?: string }) => {
+          if (payload.status === "rejected") {
+            // The server refused to write the message at all (see
+            // ConversationChannel.validate_media/2) — most commonly an
+            // attachment the sender doesn't own or hasn't finished
+            // uploading. Drop the optimistic bubble rather than leave it
+            // stuck showing a single grey tick forever.
+            setMessages((prev) => prev.filter((m) => m.id !== payload.client_msg_id));
+            setError(payload.reason ?? "message could not be sent");
+            return;
+          }
           setMessages((prev) =>
-            prev.map((m) => (payload.client_msg_id && m.id === payload.client_msg_id ? { ...m, id: payload.message_id } : m)),
+            prev.map((m) =>
+              payload.client_msg_id && m.id === payload.client_msg_id && payload.message_id
+                ? { ...m, id: payload.message_id }
+                : m,
+            ),
           );
         },
       );
@@ -248,21 +269,23 @@ export function useWavelink(userId: string | null, onNotificationClick?: (conver
   }, []);
 
   const sendMessage = useCallback(
-    (body: string) => {
+    (body: string, mediaId?: string) => {
       const channel = conversationRef.current;
       const conversationId = activeConversationRef.current;
-      if (!channel || !userId || !conversationId || !body.trim()) return;
+      const trimmed = body.trim();
+      if (!channel || !userId || !conversationId || (!trimmed && !mediaId)) return;
 
       const clientMsgId = newClientMsgId();
       const optimistic: ChatMessage = {
         id: clientMsgId,
         conversation_id: conversationId,
         from: userId,
-        body: body.trim(),
+        body: trimmed,
         inserted_at: Date.now(),
+        media_id: mediaId ?? null,
       };
       setMessages((prev) => [...prev, optimistic]);
-      channel.push("send_message", { body: body.trim(), client_msg_id: clientMsgId });
+      channel.push("send_message", { body: trimmed, client_msg_id: clientMsgId, media_id: mediaId });
     },
     [userId],
   );

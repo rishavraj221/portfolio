@@ -57,51 +57,61 @@ defmodule WavelinkWeb.ConversationChannel do
   end
 
   @impl true
-  def handle_in("send_message", %{"body" => body, "client_msg_id" => cid}, socket) do
+  def handle_in("send_message", %{"client_msg_id" => cid} = params, socket) do
     from = socket.assigns.user_id
-    conversation_id = socket.assigns.conversation_id
-    {:ok, message} = Store.put_message(conversation_id, from, body)
+    body = Map.get(params, "body", "")
+    media_id = Map.get(params, "media_id")
 
-    # Only the sending tab cares about this — swapping its optimistic id
-    # for the real one. Every member (including the sender's other open
-    # tabs) hears about the message itself via the broadcast below, since
-    # they're all joined to this same topic.
-    push(socket, "ack", %{client_msg_id: cid, message_id: message.id, status: "sent"})
+    with :ok <- validate_media(media_id, from) do
+      conversation_id = socket.assigns.conversation_id
+      {:ok, message} = Store.put_message(conversation_id, from, body, media_id)
 
-    WavelinkWeb.Endpoint.broadcast!(
-      "conversation:#{conversation_id}",
-      "message",
-      encode_message(message)
-    )
+      # Only the sending tab cares about this — swapping its optimistic id
+      # for the real one. Every member (including the sender's other open
+      # tabs) hears about the message itself via the broadcast below, since
+      # they're all joined to this same topic.
+      push(socket, "ack", %{client_msg_id: cid, message_id: message.id, status: "sent"})
 
-    # A lightweight event, not a durable write — the message itself only
-    # lives once, in the store above. This just tells every member's inbox
-    # (whether or not that member currently has this conversation open) to
-    # refresh its preview/unread count without re-fetching the whole
-    # conversation list. Includes the conversation's own shape (type/name/
-    # members) so a member seeing it for the first time — a DM just opened
-    # at them, or a group they were added to but haven't reloaded their
-    # inbox for — can render a row for it without a separate round trip;
-    # name is computed per-recipient since a DM's name is "the other
-    # member," which differs by who's asking.
-    {:ok, conversation} = Conversations.get(conversation_id)
-    members = Conversations.members(conversation_id)
-    member_ids = Enum.map(members, & &1.user_id)
+      WavelinkWeb.Endpoint.broadcast!(
+        "conversation:#{conversation_id}",
+        "message",
+        encode_message(message)
+      )
 
-    for member <- members do
-      WavelinkWeb.Endpoint.broadcast!("user:#{member.user_id}", "conversation_touched", %{
-        conversation_id: conversation_id,
-        from: from,
-        body: body,
-        message_id: message.id,
-        inserted_at: message.inserted_at,
-        type: conversation.type,
-        name: Conversations.display_name(conversation, member.user_id),
-        member_ids: member_ids
-      })
+      # A lightweight event, not a durable write — the message itself only
+      # lives once, in the store above. This just tells every member's inbox
+      # (whether or not that member currently has this conversation open) to
+      # refresh its preview/unread count without re-fetching the whole
+      # conversation list. Includes the conversation's own shape (type/name/
+      # members) so a member seeing it for the first time — a DM just opened
+      # at them, or a group they were added to but haven't reloaded their
+      # inbox for — can render a row for it without a separate round trip;
+      # name is computed per-recipient since a DM's name is "the other
+      # member," which differs by who's asking.
+      {:ok, conversation} = Conversations.get(conversation_id)
+      members = Conversations.members(conversation_id)
+      member_ids = Enum.map(members, & &1.user_id)
+      preview = if media_id, do: "📎 attachment", else: body
+
+      for member <- members do
+        WavelinkWeb.Endpoint.broadcast!("user:#{member.user_id}", "conversation_touched", %{
+          conversation_id: conversation_id,
+          from: from,
+          body: preview,
+          message_id: message.id,
+          inserted_at: message.inserted_at,
+          type: conversation.type,
+          name: Conversations.display_name(conversation, member.user_id),
+          member_ids: member_ids
+        })
+      end
+
+      {:noreply, socket}
+    else
+      {:error, reason} ->
+        push(socket, "ack", %{client_msg_id: cid, status: "rejected", reason: reason})
+        {:noreply, socket}
     end
-
-    {:noreply, socket}
   end
 
   def handle_in("mark_delivered", %{"message_id" => id}, socket),
@@ -125,13 +135,41 @@ defmodule WavelinkWeb.ConversationChannel do
     {:noreply, socket}
   end
 
+  # A message can only reference media the sender owns, and only once the
+  # upload has actually landed — attaching a still-`pending` (never
+  # completed) media id would durably write a message pointing at bytes
+  # that may not exist. `processing` is allowed: the thumbnail isn't ready
+  # yet, but the original is, same as media-service's own status contract.
+  # nil (no attachment) always passes.
+  defp validate_media(nil, _from), do: :ok
+
+  defp validate_media(media_id, from) do
+    case Wavelink.Media.get(media_id) do
+      {:ok, %{"owner_id" => ^from, "status" => status}} when status in ["ready", "processing"] ->
+        :ok
+
+      {:ok, %{"owner_id" => ^from}} ->
+        {:error, "attachment is not finished uploading yet"}
+
+      {:ok, _other_owner} ->
+        {:error, "attachment does not belong to you"}
+
+      {:error, {:http_error, 404, _}} ->
+        {:error, "attachment not found"}
+
+      {:error, _reason} ->
+        {:error, "could not verify attachment"}
+    end
+  end
+
   defp encode_message(message) do
     %{
       id: message.id,
       conversation_id: message.conversation_id,
       from: message.from,
       body: message.body,
-      inserted_at: message.inserted_at
+      inserted_at: message.inserted_at,
+      media_id: Map.get(message, :media_id)
     }
   end
 

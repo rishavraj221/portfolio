@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ConversationSummary, DirectoryUser, Member, MessageStatus } from "../lib/types";
 import { formatTime } from "../lib/format";
 import { messageStatus, readSummary } from "../lib/receipts";
-import { addMember, removeMember } from "../lib/api";
+import { addMember, removeMember, uploadAttachment } from "../lib/api";
+import MediaAttachment from "./MediaAttachment";
 
 function tick(status: MessageStatus) {
   // Same glyph for delivered/read, color (see styles.css) is what
@@ -25,13 +26,16 @@ export default function ChatWindow({
   messages: ChatMessage[];
   members: Member[];
   users: DirectoryUser[];
-  onSend: (body: string) => void;
+  onSend: (body: string, mediaId?: string) => void;
   onMarkRead: () => void;
   onBack: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [showMembers, setShowMembers] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const online = conversation?.type === "dm" ? (users.find((u) => u.username === conversation.name)?.online ?? false) : null;
   const isGroup = conversation?.type === "group";
@@ -51,6 +55,26 @@ export default function ChatWindow({
     if (!draft.trim()) return;
     onSend(draft);
     setDraft("");
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow picking the same file again later
+    if (!file) return;
+
+    setUploadError(null);
+    setUploading(true);
+    const caption = draft;
+    setDraft("");
+
+    const result = await uploadAttachment(userId, file);
+    setUploading(false);
+
+    if (!result.ok) {
+      setUploadError(result.error);
+      return;
+    }
+    onSend(caption, result.mediaId);
   }
 
   async function handleAddMember(username: string) {
@@ -121,7 +145,8 @@ export default function ChatWindow({
           return (
             <div key={m.id} className={`bubble ${m.from === userId ? "mine" : "theirs"}`}>
               {isGroup && m.from !== userId && <span className="sender">{m.from}</span>}
-              <span className="body">{m.body}</span>
+              {m.media_id && <MediaAttachment userId={userId} mediaId={m.media_id} />}
+              {m.body && <span className="body">{m.body}</span>}
               <span className="meta">
                 <span className="time">{formatTime(m.inserted_at)}</span>
                 {status && <span className={`tick ${status}`}>{tick(status)}</span>}
@@ -133,7 +158,19 @@ export default function ChatWindow({
         {sorted.length === 0 && <p className="muted">No messages in {conversation.name} yet.</p>}
       </div>
 
+      {uploadError && <p className="error">{uploadError}</p>}
+
       <form className="composer" onSubmit={handleSend}>
+        <input type="file" ref={fileInputRef} className="visually-hidden" onChange={handleFileSelected} />
+        <button
+          type="button"
+          className="iconbtn attachbtn"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach a file"
+        >
+          {uploading ? "…" : "📎"}
+        </button>
         <input
           autoFocus
           placeholder={`Message ${conversation.name}`}

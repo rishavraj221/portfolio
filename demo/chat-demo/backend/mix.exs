@@ -48,7 +48,8 @@ defmodule Wavelink.MixProject do
       {:ex_aws, "~> 2.5"},
       {:ex_aws_dynamo, "~> 4.0"},
       {:hackney, "~> 1.20"},
-      {:cors_plug, "~> 3.0"}
+      {:cors_plug, "~> 3.0"},
+      {:req, "~> 0.5"}
     ]
   end
 

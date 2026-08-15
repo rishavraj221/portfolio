@@ -13,20 +13,27 @@ defmodule Wavelink.Store.Dynamo do
   defp table, do: Application.fetch_env!(:wavelink, :dynamo_table)
 
   @impl Wavelink.Store
-  def put_message(conversation_id, from, body) do
+  def put_message(conversation_id, from, body, media_id) do
     id = Wavelink.Store.new_id()
 
-    message = %{
-      "conversation_id" => conversation_id,
-      "id" => id,
-      "from" => from,
-      "body" => body,
-      "inserted_at" => System.system_time(:millisecond)
-    }
+    message =
+      %{
+        "conversation_id" => conversation_id,
+        "id" => id,
+        "from" => from,
+        "body" => body,
+        "inserted_at" => System.system_time(:millisecond)
+      }
+      |> maybe_put("media_id", media_id)
 
     {:ok, _} = table() |> Dynamo.put_item(message) |> ExAws.request()
     {:ok, from_item(message)}
   end
+
+  # Omit rather than write an explicit NULL attribute for text messages —
+  # keeps the item sparse, matching how DynamoDB items are meant to be used.
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   @impl Wavelink.Store
   def list_since(conversation_id, since_id) do
@@ -55,7 +62,8 @@ defmodule Wavelink.Store.Dynamo do
       conversation_id: item["conversation_id"],
       from: item["from"],
       body: item["body"],
-      inserted_at: item["inserted_at"]
+      inserted_at: item["inserted_at"],
+      media_id: item["media_id"]
     }
   end
 end

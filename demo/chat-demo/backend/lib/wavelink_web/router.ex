@@ -23,4 +23,12 @@ defmodule WavelinkWeb.Router do
     post "/:id/members", ConversationController, :add_member
     delete "/:id/members/:user_id", ConversationController, :remove_member
   end
+
+  scope "/api/media", WavelinkWeb do
+    pipe_through [:api, :authed]
+
+    post "/", MediaController, :create
+    post "/:id/complete", MediaController, :complete
+    get "/:id", MediaController, :show
+  end
 end

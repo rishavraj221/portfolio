@@ -25,17 +25,22 @@ defmodule Wavelink.Store do
           conversation_id: String.t(),
           from: String.t(),
           body: String.t(),
-          inserted_at: integer()
+          inserted_at: integer(),
+          media_id: String.t() | nil
         }
 
-  @callback put_message(conversation_id :: String.t(), from :: String.t(), body :: String.t()) ::
-              {:ok, message()}
+  @callback put_message(
+              conversation_id :: String.t(),
+              from :: String.t(),
+              body :: String.t(),
+              media_id :: String.t() | nil
+            ) :: {:ok, message()}
   @callback list_since(conversation_id :: String.t(), since_id :: String.t() | nil) :: [message()]
 
   def impl, do: Application.get_env(:wavelink, :store, Wavelink.Store.Memory)
 
-  def put_message(conversation_id, from, body),
-    do: impl().put_message(conversation_id, from, body)
+  def put_message(conversation_id, from, body, media_id \\ nil),
+    do: impl().put_message(conversation_id, from, body, media_id)
 
   def list_since(conversation_id, since_id), do: impl().list_since(conversation_id, since_id)
 

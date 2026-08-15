@@ -83,6 +83,17 @@ if config_env() == :prod do
          (System.get_env("ALLOWED_ORIGINS") || "")
          |> String.split(",", trim: true)
 
+  # demo/media-service, deployed separately from Wavelink — see its README.
+  config :wavelink,
+         :media_service_url,
+         System.get_env("MEDIA_SERVICE_URL") ||
+           raise("environment variable MEDIA_SERVICE_URL is missing")
+
+  config :wavelink,
+         :media_service_token,
+         System.get_env("MEDIA_SERVICE_TOKEN") ||
+           raise("environment variable MEDIA_SERVICE_TOKEN is missing")
+
   config :wavelink, WavelinkWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [

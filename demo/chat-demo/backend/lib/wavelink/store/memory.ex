@@ -23,7 +23,7 @@ defmodule Wavelink.Store.Memory do
   end
 
   @impl Wavelink.Store
-  def put_message(conversation_id, from, body) do
+  def put_message(conversation_id, from, body, media_id) do
     id = Wavelink.Store.new_id()
 
     message = %{
@@ -31,7 +31,8 @@ defmodule Wavelink.Store.Memory do
       conversation_id: conversation_id,
       from: from,
       body: body,
-      inserted_at: System.system_time(:millisecond)
+      inserted_at: System.system_time(:millisecond),
+      media_id: media_id
     }
 
     :ets.insert(@table, {{conversation_id, id}, message})

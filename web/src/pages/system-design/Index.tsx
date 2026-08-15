@@ -32,6 +32,13 @@ export function Component() {
               off a thread per connection.
             </span>
           </li>
+          <li>
+            <a href="media-service.html">Designing a media service</a>
+            <span className="note">
+              Presigned uploads, thumbnail generation without a queue service, and why file
+              storage is a separate service from the chat app that uses it.
+            </span>
+          </li>
         </ul>
 
         <p className="muted small">More coming as I work through them.</p>

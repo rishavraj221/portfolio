@@ -27,6 +27,18 @@ config :wavelink, :conversations, Wavelink.Conversations.Memory
 # above only covers non-socket requests.
 config :wavelink, :allowed_origins, ["http://localhost:5173"]
 
+# demo/media-service, run separately (`go run ./cmd/server` there). The
+# token here matches that service's own dev-only fallback (see its
+# cmd/server/main.go) so local dev needs no extra setup — override both
+# with MEDIA_SERVICE_URL / MEDIA_SERVICE_TOKEN if you run it differently.
+config :wavelink,
+  :media_service_url,
+  System.get_env("MEDIA_SERVICE_URL", "http://localhost:8081")
+
+config :wavelink,
+  :media_service_token,
+  System.get_env("MEDIA_SERVICE_TOKEN", "dev-only-insecure-token")
+
 # ## SSL Support
 #
 # In order to use HTTPS in development, a self-signed

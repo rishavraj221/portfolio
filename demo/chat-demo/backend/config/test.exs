@@ -11,6 +11,9 @@ config :wavelink, :store, Wavelink.Store.Memory
 config :wavelink, :directory, Wavelink.Directory.Memory
 config :wavelink, :conversations, Wavelink.Conversations.Memory
 
+config :wavelink, :media_service_url, "http://localhost:8081"
+config :wavelink, :media_service_token, "dev-only-insecure-token"
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 
