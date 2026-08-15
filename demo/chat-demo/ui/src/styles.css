@@ -1,0 +1,480 @@
+:root {
+  --bg: #181818;
+  --ink: #c8c6c3;
+  --ink-bright: #f5f4f2;
+  --ink-soft: #918e8a;
+  --rule: #2f2f2f;
+  --wash: #212121;
+  --accent: #3a6ee8;
+  --online: #3fcf6e;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--sans);
+}
+
+.shell {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+}
+
+.login {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login h1 {
+  font-size: 18px;
+  color: var(--ink-bright);
+  margin: 0;
+}
+
+.muted {
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.error {
+  color: #e88a8a;
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.error.banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2a1a1a;
+  border: 1px solid #4a2a2a;
+  padding: 7px 14px;
+  border-radius: 6px;
+}
+
+input {
+  background: var(--wash);
+  border: 1px solid var(--rule);
+  color: var(--ink-bright);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font: inherit;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- shared frame for inbox / new-chat / chat window ---------- */
+.panel,
+.chat {
+  width: 100%;
+  max-width: 480px;
+  height: min(640px, 92vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--wash);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.panel header,
+.chat header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.panel header .you,
+.chat header .uname {
+  font-weight: 600;
+  color: var(--ink-bright);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.panel header {
+  justify-content: space-between;
+}
+
+.panel header .title {
+  font-weight: 600;
+  color: var(--ink-bright);
+  font-size: 14.5px;
+}
+
+.back {
+  background: none;
+  color: var(--ink-soft);
+  padding: 4px 2px;
+  font-weight: 500;
+  font-size: 13.5px;
+}
+
+.back:hover {
+  color: var(--ink-bright);
+}
+
+.newchat {
+  padding: 6px 12px;
+  font-size: 13.5px;
+}
+
+/* ---------- online/offline presence dot ---------- */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-soft);
+  opacity: 0.5;
+}
+
+.dot.online {
+  background: var(--online);
+  opacity: 1;
+}
+
+.dot.unread {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.dot.group {
+  background: var(--ink-soft);
+  opacity: 0.85;
+}
+
+/* ---------- inbox header actions + unread badge ---------- */
+.headeractions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconbtn {
+  position: relative;
+  background: none;
+  color: var(--ink-soft);
+  padding: 6px 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.iconbtn:hover {
+  color: var(--ink-bright);
+}
+
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #e0524f;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ---------- new-chat search + user list ---------- */
+.search {
+  margin: 12px 14px 4px;
+}
+
+.userlist,
+.convolist {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.userrow,
+.convorow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-weight: 400;
+}
+
+.userrow:hover,
+.convorow:hover {
+  background: #262626;
+}
+
+.userrow .uname {
+  flex: 1;
+  color: var(--ink-bright);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.userrow .status {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.convoinfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.convoinfo .uname {
+  color: var(--ink-bright);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.convoinfo .preview {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowtime {
+  flex-shrink: 0;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  font-size: 11.5px;
+  align-self: flex-start;
+  margin-top: 1px;
+}
+
+.convometa {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.convometa .badge {
+  position: static;
+}
+
+.empty {
+  padding: 20px 14px;
+}
+
+/* ---------- new-group form ---------- */
+.groupform {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  border-top: none;
+  padding: 0 0 12px;
+}
+
+.groupform .userlist {
+  flex: 1;
+}
+
+.userrow.selected {
+  background: #26314a;
+}
+
+/* ---------- group member panel ---------- */
+.memberpanel {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.memberlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memberlist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.memberlist .uname {
+  flex: 1;
+  color: var(--ink-bright);
+}
+
+.addmember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+
+/* ---------- chat window ---------- */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  word-break: break-word;
+}
+
+.bubble .body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bubble .sender {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+.bubble .meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.time {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+
+.bubble.theirs .time {
+  color: var(--ink-soft);
+}
+
+.bubble.mine {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.bubble.theirs {
+  align-self: flex-start;
+  background: #2a2a2a;
+  color: var(--ink-bright);
+  border-bottom-left-radius: 3px;
+}
+
+.tick {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.65);
+  flex-shrink: 0;
+}
+
+/* Matches the online-presence dot's green, so "read" reads as one
+   consistent color language across the app, not an arbitrary accent. */
+.tick.read {
+  color: var(--online);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.readsummary {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.55);
+  flex-basis: 100%;
+  text-align: right;
+}
+
+.bubble.theirs .readsummary {
+  color: var(--ink-soft);
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.composer input {
+  flex: 1;
+}
