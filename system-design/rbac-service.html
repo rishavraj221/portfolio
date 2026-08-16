@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Designing a Multi-Tenant RBAC Service | Rishav Raj</title>
+<meta name="description" content="A system design walkthrough for a multi-tenant role-based access control service, with a working demo and production-shaped Terraform to go with it.">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
+<link rel="manifest" href="../site.webmanifest">
+<link rel="stylesheet" href="../style.css">
+
+<link rel="canonical" href="https://rishavraj.info/system-design/rbac-service.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Rishav Raj">
+<meta property="og:title" content="Designing a Multi-Tenant RBAC Service | Rishav Raj">
+<meta property="og:description" content="A system design walkthrough for a multi-tenant role-based access control service, with a working demo and production-shaped Terraform to go with it.">
+<meta property="og:url" content="https://rishavraj.info/system-design/rbac-service.html">
+<meta property="og:image" content="https://rishavraj.info/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Designing a Multi-Tenant RBAC Service | Rishav Raj">
+<meta name="twitter:description" content="A system design walkthrough for a multi-tenant role-based access control service, with a working demo.">
+<meta name="twitter:image" content="https://rishavraj.info/og-image.png">
+</head>
+<body>
+
+<div class="wrap page">
+
+  <a class="back" href="index.html">System design</a>
+
+  <h1 class="title">Designing a multi-tenant RBAC service</h1>
+  <p class="standfirst">
+    This one is not hypothetical. It is the same model I built at Flexday
+    (<a href="../projects/rbac.html">write-up here</a>), rebuilt from scratch as a
+    standalone demo: full auth flows, a resource-level authorize endpoint, policy-version
+    revocation, and a production-shaped deployment behind it.
+  </p>
+
+  <div class="rows small">
+    <div class="row"><div class="k">Topic</div><div class="v">System design</div></div>
+    <div class="row"><div class="k">Demo</div><div class="v">demo/rbac-demo in this repo, runnable locally</div></div>
+    <div class="row"><div class="k">Related</div><div class="v"><a href="../projects/rbac.html">An RBAC service for clients on three different clouds</a></div></div>
+  </div>
+
+  <hr>
+
+  <h2>Covered</h2>
+  <ul class="toc">
+    <li><a href="#model">The model</a></li>
+    <li><a href="#check">Local checks vs a central authorize call</a></li>
+    <li><a href="#revocation">Revocation without waiting for a token to expire</a></li>
+    <li><a href="#m2m">Service to service</a></li>
+    <li><a href="#isolation">Tenant isolation</a></li>
+    <li><a href="#deploy">Production deployment</a></li>
+    <li><a href="#run">Running it yourself</a></li>
+  </ul>
+
+  <hr>
+
+  <h2 id="model">The model</h2>
+  <p>
+    A <strong>tenant</strong> owns everything: users join it through a
+    <strong>membership</strong>, and the membership is what carries role assignments,
+    not the user directly. The same person can hold different roles in different
+    tenants because the assignment lives on the membership, not the account.
+  </p>
+  <p>
+    A <strong>role</strong> is a named bundle of <strong>permissions</strong>, written as
+    <code>resource:action</code> strings — <code>document:approve</code>,
+    <code>project:write</code>. Roles are either system roles, shared across every
+    tenant, or custom roles a tenant defines for itself. <strong>Service clients</strong>
+    sit alongside memberships: a client id and secret authenticate as a machine rather
+    than a user, and their scopes are drawn from the exact same permission strings roles
+    are built from.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 300" role="img"
+         aria-label="A tenant owns memberships and service clients. Memberships carry role assignments; roles carry permissions; service clients carry scopes from the same permission vocabulary.">
+      <defs>
+        <marker id="m1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b-a" x="245" y="10" width="150" height="42" rx="6"/>
+      <text class="t" x="320" y="28" text-anchor="middle">Tenant</text>
+      <text class="s" x="320" y="44" text-anchor="middle">acme, slug "acme"</text>
+
+      <path class="ar" d="M320 52 L320 68"/>
+      <path class="ar" d="M160 68 L480 68"/>
+      <path class="ar" d="M160 68 L160 86" marker-end="url(#m1)"/>
+      <path class="ar" d="M480 68 L480 86" marker-end="url(#m1)"/>
+
+      <rect class="b" x="70" y="88" width="180" height="50" rx="6"/>
+      <text class="t" x="160" y="107" text-anchor="middle">Membership</text>
+      <text class="s" x="160" y="123" text-anchor="middle">user + role assignments</text>
+
+      <rect class="b" x="390" y="88" width="180" height="50" rx="6"/>
+      <text class="t" x="480" y="107" text-anchor="middle">Service client</text>
+      <text class="s" x="480" y="123" text-anchor="middle">client_id + secret hash</text>
+
+      <path class="ar" d="M160 138 L160 156" marker-end="url(#m1)"/>
+      <path class="ar" d="M480 138 L480 156" marker-end="url(#m1)"/>
+
+      <rect class="b" x="70" y="158" width="180" height="46" rx="6"/>
+      <text class="t" x="160" y="177" text-anchor="middle">Role</text>
+      <text class="s" x="160" y="193" text-anchor="middle">system or tenant custom</text>
+
+      <rect class="b" x="390" y="158" width="180" height="46" rx="6"/>
+      <text class="t" x="480" y="177" text-anchor="middle">Scopes</text>
+      <text class="s" x="480" y="193" text-anchor="middle">same permission strings</text>
+
+      <path class="ar" d="M160 204 L160 222" marker-end="url(#m1)"/>
+
+      <rect class="b" x="70" y="224" width="180" height="46" rx="6"/>
+      <text class="t" x="160" y="243" text-anchor="middle">Permissions</text>
+      <text class="m" x="160" y="259" text-anchor="middle">resource:action</text>
+
+      <path class="ard" d="M390 181 L320 181 L320 247 L252 247" marker-end="url(#m1)"/>
+      <text class="l" x="326" y="215">one vocabulary</text>
+
+      <rect class="b-d" x="45" y="278" width="550" height="18" rx="4"/>
+      <text class="s" x="320" y="291" text-anchor="middle">demo also has projects and documents, so "resource-level" below is a real check, not a stub</text>
+    </svg>
+    <figcaption>Same shape as the Flexday model, plus projects and documents so the resource-level check in the next section is something you can actually click.</figcaption>
+  </figure>
+
+  <h2 id="check">Local checks vs a central authorize call</h2>
+  <p>
+    Most permission checks are coarse and answerable from the access token alone: can
+    this user see the documents list at all. The demo's UI decodes the JWT client-side
+    and reads the permission straight out of it — no request made, tagged
+    <code>local</code> in the decision log. The token's signature is still verified
+    server-side against the JWKS on every actual API call; the client-side read is purely
+    to decide what to render.
+  </p>
+  <p>
+    Some checks cannot be answered from a token. Approving a document depends on whether
+    the caller is a member of the project that document belongs to — a fact that would
+    make the token enormous and stale within minutes if it had to carry every resource a
+    user could touch. Those go to <code>POST /v1/authorize</code>, which checks the
+    permission and then walks the resource relationship, and writes a row to
+    <code>audit_log</code> either way.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 250" role="img"
+         aria-label="A coarse permission check reads from the decoded token client side with no request made. A resource level check calls POST v1 authorize, which checks the permission then the resource relationship, and always logs the decision.">
+      <defs>
+        <marker id="m2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="220" y="8" width="200" height="36" rx="6"/>
+      <text class="t" x="320" y="31" text-anchor="middle">UI wants to show a button</text>
+      <path class="ar" d="M320 44 L320 60" marker-end="url(#m2)"/>
+
+      <rect class="b" x="230" y="62" width="180" height="34" rx="6"/>
+      <text class="t" x="320" y="83" text-anchor="middle">resource specific?</text>
+
+      <path class="ar" d="M230 79 L190 79" marker-end="url(#m2)"/>
+      <text class="l" x="196" y="73">no</text>
+      <rect class="b-a" x="10" y="60" width="180" height="40" rx="6"/>
+      <text class="s" x="100" y="77" text-anchor="middle">decode token client-side,</text>
+      <text class="s" x="100" y="91" text-anchor="middle">tag "local", no request</text>
+
+      <path class="ar" d="M320 96 L320 114" marker-end="url(#m2)"/>
+      <text class="l" x="328" y="108">yes</text>
+
+      <rect class="b-a" x="165" y="116" width="310" height="46" rx="6"/>
+      <text class="m" x="320" y="136" text-anchor="middle">POST /v1/authorize</text>
+      <text class="s" x="320" y="152" text-anchor="middle">action, resource -- tagged "central"</text>
+      <path class="ar" d="M320 162 L320 180" marker-end="url(#m2)"/>
+
+      <rect class="b" x="165" y="182" width="310" height="56" rx="6"/>
+      <text class="t" x="320" y="203" text-anchor="middle">permission check, then resource check</text>
+      <text class="s" x="320" y="220" text-anchor="middle">e.g. is subject a member of the document's project</text>
+      <text class="s" x="320" y="234" text-anchor="middle">decision written to audit_log either way</text>
+    </svg>
+    <figcaption>The left branch never leaves the browser. The right branch is the only one that produces a record.</figcaption>
+  </figure>
+
+  <h2 id="revocation">Revocation without waiting for a token to expire</h2>
+  <p>
+    Access tokens carry a policy version alongside the tenant id. Assigning or revoking a
+    role bumps <code>tenants.policy_version</code> and invalidates the cached copy in
+    Redis in the same request. Every open session polls <code>/v1/me</code> every few
+    seconds; when the tenant's current version moves past the version baked into the
+    token, the badge flips to stale and the client silently exchanges its refresh token
+    for a fresh one. The change is visible within one poll interval instead of at
+    whatever time the old token happened to expire.
+  </p>
+  <p>
+    Refresh tokens are opaque, rotate on every use, and are tracked by a family id. If a
+    token that was already marked used shows up again, the whole family is revoked — the
+    signal that a refresh token was copied and used by someone other than its holder.
+  </p>
+
+  <h2 id="m2m">Service to service</h2>
+  <p>
+    A client id and secret exchange for a service token on a separate audience, using
+    <code>POST /v1/auth/token</code>. The audience separation means a stolen service
+    token can never be replayed against a user-facing endpoint even though both token
+    types are signed by the same key. Scopes come from the same permission table roles
+    are built from, so a denied service call and a denied user click get diagnosed the
+    same way.
+  </p>
+
+  <h2 id="isolation">Tenant isolation</h2>
+  <p>
+    Every tenant-scoped repository function in the backend takes the tenant id as a
+    required first argument and throws if it is missing, rather than silently running an
+    unfiltered query. The test suite goes further: every case seeds two tenants and
+    asserts that a query scoped to one never returns anything belonging to the other.
+    That second habit is the one that actually catches a missing filter — a test suite
+    that only ever seeds one tenant will pass regardless.
+  </p>
+
+  <h2 id="deploy">Production deployment</h2>
+  <p>
+    The Terraform in <code>demo/rbac-demo/infra</code> is written to the shape the real
+    Flexday service ran at — a handful of small pods behind a load balancer, one managed
+    Postgres instance, one managed Redis — rather than to run for a portfolio demo. It is
+    not applied; there is no state backend configured, on purpose, so a stray
+    <code>terraform apply</code> can't provision real AWS resources for this.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 250" role="img"
+         aria-label="Callers reach the backend through an ALB and Kubernetes Ingress on EKS, hitting a deployment of three backend pods, which is backed by an RDS Postgres instance and an ElastiCache Redis node.">
+      <defs>
+        <marker id="m3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <text class="l" x="0" y="12">UIs, integrations, service-to-service callers</text>
+
+      <rect class="b" x="10" y="24" width="140" height="46" rx="6"/>
+      <text class="t" x="80" y="43" text-anchor="middle">Callers</text>
+      <text class="s" x="80" y="59" text-anchor="middle">public internet</text>
+      <path class="ar" d="M150 47 L188 47" marker-end="url(#m3)"/>
+
+      <rect class="b" x="190" y="24" width="155" height="46" rx="6"/>
+      <text class="t" x="267" y="43" text-anchor="middle">ALB (public subnets)</text>
+      <text class="s" x="267" y="59" text-anchor="middle">via k8s Ingress, ALB controller</text>
+      <path class="ar" d="M345 47 L383 47" marker-end="url(#m3)"/>
+
+      <rect class="b-a" x="385" y="16" width="245" height="62" rx="6"/>
+      <text class="t" x="507" y="38" text-anchor="middle">EKS: rbac-demo-backend</text>
+      <text class="s" x="507" y="54" text-anchor="middle">3 pods, 250m-1 vCPU / 512Mi-1Gi each</text>
+      <text class="s" x="507" y="68" text-anchor="middle">private subnets</text>
+
+      <path class="ar" d="M507 78 L507 100"/>
+      <path class="ar" d="M392 100 L552 100"/>
+      <path class="ar" d="M392 100 L392 120" marker-end="url(#m3)"/>
+      <path class="ar" d="M552 100 L552 120" marker-end="url(#m3)"/>
+
+      <rect class="b" x="302" y="122" width="180" height="50" rx="6"/>
+      <text class="t" x="392" y="141" text-anchor="middle">RDS Postgres</text>
+      <text class="s" x="392" y="157" text-anchor="middle">single instance, gp3, encrypted</text>
+
+      <rect class="b" x="462" y="122" width="168" height="50" rx="6"/>
+      <text class="t" x="546" y="141" text-anchor="middle">ElastiCache Redis</text>
+      <text class="s" x="546" y="157" text-anchor="middle">policy-version + JWKS cache</text>
+
+      <rect class="b-d" x="10" y="184" width="620" height="50" rx="6"/>
+      <text class="s" x="320" y="203" text-anchor="middle">Node group: t3.small, desired 3 / min 2 / max 6, private subnets</text>
+      <text class="s" x="320" y="219" text-anchor="middle">Single NAT gateway, 2 AZs -- same footprint the real service ran at</text>
+    </svg>
+    <figcaption>demo/rbac-demo/infra models this exactly; nothing here has been deployed.</figcaption>
+  </figure>
+
+  <h2 id="run">Running it yourself</h2>
+  <p>
+    The demo runs locally with Docker Compose: Postgres, Redis, the Fastify backend, and
+    the React UI, plus a seed script that creates a demo tenant with four users holding
+    different roles across two projects, so the resource-level authorize check has
+    something real to deny.
+  </p>
+  <pre><code>cd demo/rbac-demo
+docker compose up --build</code></pre>
+  <p>
+    The seed script prints the demo accounts on first run. Two of them share a role with
+    identical permissions — <code>document:approve</code> — but are on different
+    projects, specifically so you can watch the same coarse permission produce an allow
+    for one document and a deny for another, decided centrally rather than from the
+    token.
+  </p>
+
+  <hr>
+
+  <p class="small">
+    <a href="../projects/rbac.html">Read the original write-up</a> for the version of
+    this that ran in production at Flexday, across three different clouds.
+  </p>
+
+  <p class="small">
+    <a href="index.html">Back to system design</a>
+  </p>
+
+  <footer>
+    <p><a href="mailto:rairishav221@gmail.com">rairishav221@gmail.com</a></p>
+  </footer>
+
+</div>
+
+</body>
+</html>
