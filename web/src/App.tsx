@@ -33,6 +33,7 @@ export const routes: RouteRecord[] = [
       { path: "system-design/index.html", lazy: () => import("./pages/system-design/Index") },
       { path: "system-design/chat-application.html", lazy: () => import("./pages/system-design/ChatApplication") },
       { path: "system-design/media-service.html", lazy: () => import("./pages/system-design/MediaService") },
+      { path: "system-design/rbac-service.html", lazy: () => import("./pages/system-design/RbacService") },
     ],
   },
 ];

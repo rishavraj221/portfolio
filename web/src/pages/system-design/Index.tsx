@@ -39,6 +39,13 @@ export function Component() {
               storage is a separate service from the chat app that uses it.
             </span>
           </li>
+          <li>
+            <a href="rbac-service.html">Designing a multi-tenant RBAC service</a>
+            <span className="note">
+              Roles, permissions, local vs. central authorization, policy-version revocation,
+              and a working demo with production-shaped Terraform.
+            </span>
+          </li>
         </ul>
 
         <p className="muted small">More coming as I work through them.</p>

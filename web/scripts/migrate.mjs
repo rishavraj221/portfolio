@@ -69,3 +69,4 @@ migrate("projects/fastail.html", "projects/Fastail.tsx");
 migrate("projects/kureita.html", "projects/Kureita.tsx");
 migrate("system-design/index.html", "system-design/Index.tsx");
 migrate("system-design/chat-application.html", "system-design/ChatApplication.tsx");
+migrate("system-design/rbac-service.html", "system-design/RbacService.tsx");
