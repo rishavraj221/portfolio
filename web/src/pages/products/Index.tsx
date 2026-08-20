@@ -8,6 +8,30 @@ export function Component() {
         description="Things I've built and shipped, not just written up."
         canonical="https://rishavraj.info/products/"
         ogType="website"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "CollectionPage",
+          name: "Products",
+          url: "https://rishavraj.info/products/",
+          author: { "@type": "Person", name: "Rishav Raj", url: "https://rishavraj.info/" },
+          mainEntity: {
+            "@type": "ItemList",
+            itemListElement: [
+              {
+                "@type": "ListItem",
+                position: 1,
+                item: {
+                  "@type": "SoftwareApplication",
+                  name: "infraviz",
+                  url: "https://rishavraj.info/products/infraviz/",
+                  applicationCategory: "DeveloperApplication",
+                  description:
+                    "Architecture docs that cite their sources — every claim carries an exact substring from a real file.",
+                },
+              },
+            ],
+          },
+        }}
       />
       <div className="wrap page">
         <a className="back" href="../index.html">
