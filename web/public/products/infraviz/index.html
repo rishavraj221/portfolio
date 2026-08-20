@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>infraviz — architecture docs that cite their sources</title>
+<meta name="description" content="Generate an architecture map of your API with the coding agent you already use, where every claim carries an exact substring from a real file — and one command re-reads your source to prove it." />
+<link rel="canonical" href="https://rishavraj.info/products/infraviz/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Rishav Raj" />
+<meta property="og:title" content="infraviz — architecture docs that cite their sources" />
+<meta property="og:description" content="Generate an architecture map of your API with the coding agent you already use, where every claim carries an exact substring from a real file — and one command re-reads your source to prove it." />
+<meta property="og:url" content="https://rishavraj.info/products/infraviz/" />
+<meta name="twitter:card" content="summary_large_image" />
+<style>
+  /* ============================================================
+     infraviz — the field manual
+     Warm paper ground, serif thesis, mono for every piece of
+     evidence. Everything on this page that looks like the product
+     is a real screenshot of a real run against a real repository.
+     ============================================================ */
+
+  :root {
+    --paper:      #fbfaf6;
+    --panel:      #f3f1e8;
+    --panel-2:    #eceadf;
+    --ink:        #1a1a17;
+    --ink-soft:   #57574d;
+    --ink-faint:  #8b8b7e;
+    --rule:       #dedacd;
+    --rule-soft:  #eae7db;
+    --accent:     #1c6b5b;
+    --accent-dim: #dcebe5;
+    --rust:       #9c3b28;
+    --rust-dim:   #f3e3de;
+    --amber:      #8a6420;
+    --amber-dim:  #f2ead7;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 34rem;
+    --wide: 68rem;
+
+    --shadow: 0 1px 1px rgba(26, 26, 23, .04), 0 14px 40px -24px rgba(26, 26, 23, .45);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #15140f;
+      --panel:      #1d1c15;
+      --panel-2:    #24221a;
+      --ink:        #ece9dc;
+      --ink-soft:   #a9a696;
+      --ink-faint:  #7d7a6b;
+      --rule:       #322f24;
+      --rule-soft:  #272519;
+      --accent:     #6dbfa8;
+      --accent-dim: #16342c;
+      --rust:       #d9836c;
+      --rust-dim:   #35201a;
+      --amber:      #c9a05c;
+      --amber-dim:  #2f2717;
+      --shadow: 0 1px 1px rgba(0,0,0,.5), 0 16px 44px -26px rgba(0,0,0,1);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #15140f;
+    --panel:      #1d1c15;
+    --panel-2:    #24221a;
+    --ink:        #ece9dc;
+    --ink-soft:   #a9a696;
+    --ink-faint:  #7d7a6b;
+    --rule:       #322f24;
+    --rule-soft:  #272519;
+    --accent:     #6dbfa8;
+    --accent-dim: #16342c;
+    --rust:       #d9836c;
+    --rust-dim:   #35201a;
+    --amber:      #c9a05c;
+    --amber-dim:  #2f2717;
+    --shadow: 0 1px 1px rgba(0,0,0,.5), 0 16px 44px -26px rgba(0,0,0,1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body { overflow-x: clip; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---------- layout ---------------------------------------- */
+
+  .sheet {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: 0 clamp(20px, 5vw, 56px);
+  }
+
+  .col { max-width: var(--measure); }
+
+  section { padding: clamp(56px, 8vw, 104px) 0; border-top: 1px solid var(--rule); }
+  section:first-of-type { border-top: 0; }
+
+  /* ---------- type ------------------------------------------ */
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 18px;
+  }
+  .eyebrow b { color: var(--accent); font-weight: 500; }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(34px, 6vw, 58px);
+    line-height: 1.08;
+    letter-spacing: -.015em;
+    margin: 0 0 26px;
+    max-width: 20ch;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(26px, 3.6vw, 37px);
+    line-height: 1.16;
+    letter-spacing: -.012em;
+    margin: 0 0 18px;
+    max-width: 21ch;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -.005em;
+    margin: 0 0 6px;
+  }
+
+  p { margin: 0 0 20px; }
+  p:last-child { margin-bottom: 0; }
+
+  .lede { font-size: 20px; line-height: 1.55; color: var(--ink-soft); }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .small { font-size: 15px; color: var(--ink-soft); }
+
+  em { font-style: italic; }
+  strong { font-weight: 600; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .86em;
+    background: var(--panel-2);
+    border-radius: 3px;
+    padding: .1em .38em;
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: .16em; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  /* ---------- masthead -------------------------------------- */
+
+  .masthead { padding-top: clamp(48px, 9vw, 108px); }
+
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 clamp(40px, 7vw, 76px);
+  }
+
+  .thesis-rule {
+    width: 64px; height: 2px; background: var(--ink);
+    margin: 0 0 26px;
+  }
+
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 34px; }
+
+  .cmd {
+    font-family: var(--mono);
+    font-size: 14px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 12px 18px;
+    border-radius: 4px;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .cmd .prompt { opacity: .5; }
+
+  .cta-note { font-size: 14px; color: var(--ink-faint); }
+
+  .masthead-facts {
+    display: flex; flex-wrap: wrap; gap: 0 34px;
+    margin-top: clamp(40px, 6vw, 64px);
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-size: 14px; color: var(--ink-soft);
+  }
+  .masthead-facts span { display: inline-flex; align-items: baseline; gap: 7px; }
+  .masthead-facts b { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 500; }
+
+  /* ---------- evidence blocks ------------------------------- */
+
+  .term {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.75;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink-soft);
+    margin: 0 0 20px;
+  }
+  .term .ok { color: var(--accent); }
+  .term .bad { color: var(--rust); }
+  .term .dim { color: var(--ink-faint); }
+  .term .key { color: var(--ink); }
+
+  figure { margin: 0; }
+
+  .plate {
+    margin: 40px 0 0;
+    max-width: var(--wide);
+  }
+
+  .plate picture { display: block; }
+
+  .plate img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .plate figcaption {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    margin-top: 12px;
+    max-width: 56ch;
+    line-height: 1.55;
+  }
+  .plate figcaption b {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    margin-right: 8px;
+  }
+
+
+  /* wide plates break out of the prose column so app screenshots stay legible */
+
+
+
+  /* ---------- the live viewer, shown once ------------------- */
+
+  .explore {
+    width: 100vw;
+    margin: clamp(56px, 8vw, 92px) 0 0 calc(50% - 50vw);
+    padding: clamp(28px, 4vw, 44px) clamp(20px, 5vw, 56px) clamp(32px, 5vw, 52px);
+    background: var(--panel);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .explore-head { max-width: 1560px; margin: 0 auto; }
+  .explore-title {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(23px, 3vw, 30px); letter-spacing: -.012em;
+    margin: 0 0 10px;
+  }
+  .explore-lede { max-width: 60ch; }
+
+  .live { margin-top: 26px; max-width: 1560px; margin-inline: auto; }
+
+  .live-frame {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+
+  .live-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px 8px 14px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    color: var(--ink-faint);
+    flex-wrap: wrap;
+  }
+  .live-bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .live-bar .path { color: var(--ink-soft); min-width: 0; }
+  .live-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
+
+  @media (max-width: 560px) {
+    .live-actions { margin-left: 0; width: 100%; }
+    .live-btn { flex: 1; text-align: center; }
+  }
+
+  .live-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    color: var(--ink-soft); background: var(--paper);
+    border: 1px solid var(--rule); border-radius: 4px;
+    padding: 5px 10px; cursor: pointer; text-decoration: none; white-space: nowrap;
+  }
+  .live-btn:hover, .live-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+
+  .live-stage { position: relative; }
+
+  .live iframe {
+    display: block; width: 100%;
+    height: clamp(520px, 76vh, 840px);
+    border: 0; background: var(--paper);
+  }
+
+  /* On a narrow screen the viewer is better in its own tab than in a
+     400px porthole, so it is offered rather than forced. */
+  .live-offer {
+    display: none;
+    flex-direction: column; align-items: flex-start; gap: 14px;
+    padding: clamp(24px, 6vw, 38px);
+    background: var(--paper);
+  }
+  .live-offer p { font-size: 15px; color: var(--ink-soft); margin: 0; max-width: 44ch; }
+  .live-cta {
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    background: var(--ink); color: var(--paper);
+    padding: 10px 16px; border-radius: 4px; text-decoration: none;
+  }
+  .live-cta:hover, .live-cta:focus-visible { background: var(--accent); }
+
+  @media (max-width: 1023px) {
+    .live-offer { display: flex; }
+    .live-stage iframe { display: none; }
+  }
+  .live-frame.is-loaded .live-offer { display: none; }
+  .live-frame.is-loaded .live-stage iframe { display: block; }
+
+  /* Fullscreen keeps the bar, so the way back is where the way in was. */
+  .live-frame:fullscreen { border: 0; border-radius: 0; display: flex; flex-direction: column; background: var(--paper); }
+  .live-frame:fullscreen .live-stage { flex: 1; min-height: 0; }
+  .live-frame:fullscreen .live-stage iframe { display: block; height: 100%; }
+  .live-frame:fullscreen .live-offer { display: none; }
+
+  .live figcaption {
+    font-size: 13.5px; color: var(--ink-faint);
+    margin-top: 14px; max-width: 62ch; line-height: 1.55;
+  }
+  .live figcaption b {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--accent); font-weight: 500; margin-right: 8px;
+  }
+
+  /* ---------- the walkthrough ------------------------------- */
+
+  .step { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 0 clamp(16px, 3vw, 32px); }
+  .step + .step { margin-top: clamp(52px, 7vw, 88px); padding-top: clamp(52px, 7vw, 88px); border-top: 1px solid var(--rule-soft); }
+
+  .step-n {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .08em;
+    color: var(--accent);
+    padding-top: .5em;
+  }
+
+  .step-body { min-width: 0; }
+  .step-body h3 { font-family: var(--serif); font-size: 23px; font-weight: 400; letter-spacing: -.01em; margin-bottom: 10px; }
+  .step-body > p { max-width: var(--measure); }
+
+  @media (max-width: 640px) {
+    .step { grid-template-columns: 1fr; }
+    .step-n { padding-top: 0; margin-bottom: 8px; }
+  }
+
+  /* ---------- lens table ------------------------------------ */
+
+  .lenses { border-top: 1px solid var(--rule); margin-top: 34px; }
+
+  .lens {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 4px clamp(16px, 3vw, 32px);
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .lens dt { font-weight: 600; font-size: 16px; }
+  .lens dd { margin: 0; color: var(--ink-soft); font-size: 15.5px; }
+
+  @media (max-width: 620px) { .lens { grid-template-columns: 1fr; } }
+
+  /* ---------- ledger (trade-offs) --------------------------- */
+
+  .ledger { display: grid; gap: 2px; margin-top: 34px; }
+
+  .entry {
+    background: var(--panel);
+    border-left: 2px solid var(--rust);
+    padding: 18px 22px;
+  }
+  .entry.neutral { border-left-color: var(--amber); }
+  .entry h3 { margin-bottom: 4px; }
+  .entry p { font-size: 15.5px; color: var(--ink-soft); margin: 0; }
+
+  /* ---------- pull quote ------------------------------------ */
+
+  .pull {
+    font-family: var(--serif);
+    font-size: clamp(22px, 3.2vw, 31px);
+    line-height: 1.3;
+    letter-spacing: -.01em;
+    max-width: 24ch;
+    margin: 0;
+    color: var(--ink);
+  }
+  .pull-attrib { font-size: 14px; color: var(--ink-faint); margin-top: 16px; }
+
+  /* ---------- who it's for ---------------------------------- */
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--rule-soft); border: 1px solid var(--rule-soft); margin-top: 34px; }
+  .card { background: var(--paper); padding: 22px 24px; }
+  .card p { font-size: 15px; color: var(--ink-soft); margin: 0; }
+  .card h3 { margin-bottom: 6px; }
+
+  /* ---------- footer ---------------------------------------- */
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: clamp(56px, 8vw, 96px) 0 clamp(48px, 7vw, 72px);
+  }
+  .colophon {
+    margin-top: 44px; padding-top: 22px; border-top: 1px solid var(--rule-soft);
+    font-size: 13px; color: var(--ink-faint); max-width: 62ch;
+  }
+
+  /* ---------- misc ------------------------------------------ */
+
+  .note-inline {
+    background: var(--amber-dim);
+    border-radius: 4px;
+    padding: 16px 20px;
+    font-size: 15px;
+    color: var(--ink-soft);
+    margin: 24px 0 0;
+    max-width: var(--measure);
+  }
+  .note-inline b { color: var(--ink); }
+
+  ul.plain { margin: 0 0 20px; padding-left: 1.15em; }
+  ul.plain li { margin-bottom: 8px; color: var(--ink-soft); }
+  ul.plain li::marker { color: var(--ink-faint); }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+
+  <!-- ============ MASTHEAD ============ -->
+  <header class="masthead">
+    <p class="wordmark">infraviz</p>
+
+    <div class="thesis-rule"></div>
+
+    <h1>Anything an LLM writes about your code is a claim, not a fact.</h1>
+
+    <div class="col">
+      <p class="lede">
+        infraviz maps your API's real architecture — request flow, risk, what to fix first — using the
+        coding agent you already have. Every claim it makes must carry <strong>an exact substring from the
+        file it cites</strong>. One command re-reads your source and tells you which claims still hold.
+      </p>
+      <p class="small">
+        No account, no server, no telemetry. It runs on your machine and writes JSON into your repo.
+      </p>
+    </div>
+
+    <div class="cta">
+      <span class="cmd"><span class="prompt">$ </span>npx infraviz view</span>
+      <span class="cta-note">or open the desktop app and drop a folder on it</span>
+    </div>
+
+    <div class="masthead-facts">
+      <span><b>MIT</b> licensed</span>
+      <span><b>2</b> runtime dependencies</span>
+      <span><b>0</b> network calls in the CLI</span>
+      <span><b>127.0.0.1</b> only</span>
+    </div>
+  </header>
+
+  <!-- ============ THE RULE ============ -->
+  <section id="rule">
+    <p class="eyebrow"><b>I.</b> &nbsp;The rule everything hangs on</p>
+    <div class="col">
+      <h2>A citation you can check is worth more than a paragraph you can't.</h2>
+      <p>
+        Ask any coding agent to document your architecture and you get something plausible. Plausible is
+        the problem: a hallucinated finding and a real one look identical on the page, so the whole
+        document has to be re-derived by hand before anyone can act on it — which is why nobody does.
+      </p>
+      <p>
+        infraviz makes that check mechanical. Each finding carries a <code>fingerprint</code>: a short,
+        exact, character-for-character quote from the file it names.
+      </p>
+    </div>
+
+    <div class="term" style="max-width: 56rem;">{ <span class="key">"title"</span>:       "GET /api/media/:id hands any attachment to any caller",
+  <span class="key">"file"</span>:        "backend/lib/wavelink_web/controllers/media_controller.ex",
+  <span class="key">"fingerprint"</span>: <span class="ok">"def show(conn, %{\"id\" =&gt; id}) do"</span>,
+  <span class="key">"breaks"</span>:      "show/2 performs no ownership or membership check — it forwards the id
+                 to media-service and returns the record along with a signed URL for the
+                 bytes. Media ids are generated from a timestamp, so they can be walked
+                 rather than guessed.",
+  <span class="key">"fix"</span>:         "Build the media_id → conversation_id index the comment says is
+                 missing, and confirm the caller is a member before resolving." }</div>
+
+    <div class="col">
+      <p>
+        <code>npx infraviz verify</code> opens the real file and looks for that substring. If the code moved
+        on, the claim fails — visibly, next to the finding, labelled <em>unverified claim</em> rather than
+        quietly dropped.
+      </p>
+    </div>
+
+    <div class="term" style="max-width: 56rem;"><span class="prompt dim">$ </span>npx infraviz verify
+
+<span class="dim">infraviz verify  ~/portfolio/demo/chat-demo</span>
+
+  <span class="ok">schema ok</span>  ·  <span class="ok">27 verified</span> · 0 failed · 0 judgment-only</div>
+
+    <div class="note-inline">
+      <b>That output is real, and so was the failure before it.</b> Generating the example on this page,
+      one fingerprint didn't match — a quote copied across two lines that doesn't exist as a contiguous
+      substring. <code>verify</code> caught it, named the file, and the claim was fixed before anything
+      shipped. That is the entire mechanism working, and it is worth more than a page of assurances.
+    </div>
+
+    <div class="col" style="margin-top: 34px;">
+      <p>
+        Two consequences follow, and they are the reason to bother:
+      </p>
+      <ul class="plain">
+        <li><strong>Hallucinations become visible</strong> instead of indistinguishable from real findings.</li>
+        <li><strong>The docs can't rot silently.</strong> <code>verify --strict</code> is a CI gate that fails
+          when the diagrams drift away from the code they describe.</li>
+      </ul>
+      <p>
+        The spec also permits the agent to report <em>nothing</em>. A generator forced to produce five
+        findings will invent five, and one invented finding devalues every real one beside it.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ PLUGS INTO YOUR AGENT ============ -->
+  <section id="agent">
+    <p class="eyebrow"><b>II.</b> &nbsp;It has no model of its own</p>
+    <div class="col">
+      <h2>It drives the agent already sitting in your editor.</h2>
+      <p>
+        There is no infraviz account, no infraviz API key and no infraviz inference bill, because infraviz
+        does no inference. It ships a specification — the schema, the evidence rules, the prompts — and
+        hands it to whichever agent you use. <strong>Claude Code, Cursor, or Codex</strong>, on your
+        machine, under your existing subscription.
+      </p>
+      <p>
+        Two paths, and they write the same files, so you can switch mid-way. Run it from the app if an
+        agent CLI is on your <code>PATH</code>. Or copy a prompt and paste it into your IDE — the open page
+        picks up the files as they land, with no reload.
+      </p>
+    </div>
+
+    <figure class="plate">
+      <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="shots/03-detect-dark.png" />
+              <img src="shots/03-detect.png" alt="The infraviz start screen, showing that Claude Code was detected on the PATH, with model and effort selectors, next to a card offering a copyable prompt for your IDE instead." width="1520" height="1140" loading="lazy" />
+            </picture>
+      <figcaption><b>detected</b> Claude Code v2.1.224 was found on this machine's PATH. Both paths are offered as equals — nothing here is unavailable if you have no CLI installed.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ WALKTHROUGH ============ -->
+  <section id="walkthrough">
+    <p class="eyebrow"><b>III.</b> &nbsp;An end-to-end run, start to finish</p>
+    <div class="col">
+      <h2>One real repository, from an empty page to a ranked list of fixes.</h2>
+      <p>
+        Everything below came out of one actual run against <strong>wavelink</strong> — a Phoenix chat
+        backend in Elixir with a React client, seven HTTP surfaces, DynamoDB behind it and an external Go
+        service for attachments. The steps are screenshots, because they show states you have to be
+        mid-run to see. <strong>The result is the viewer itself</strong>, embedded below and loaded with
+        that run's real output. Nothing here is a mockup.
+      </p>
+    </div>
+
+    <div style="margin-top: clamp(44px, 6vw, 72px);">
+
+      <!-- 01 -->
+      <div class="step">
+        <div class="step-n">01</div>
+        <div class="step-body">
+          <h3>Open it on a repository</h3>
+          <p class="small">
+            The desktop app starts with no repository loaded and asks for one — pick a folder or drop it
+            on the window. From a terminal, <code>npx infraviz view</code> does the same thing for the
+            directory you are standing in.
+          </p>
+          <figure class="plate">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="shots/01-start-dark.png" />
+              <img src="shots/01-start.png" alt="The infraviz desktop app's opening screen, headlined 'See what your system actually does', with a diagram showing a background write that outlives the HTTP response, and a 'Choose a repository' button." width="1600" height="1664" loading="lazy" />
+            </picture>
+          </figure>
+        </div>
+      </div>
+
+      <!-- 02 -->
+      <div class="step">
+        <div class="step-n">02</div>
+        <div class="step-body">
+          <h3>Read what you are agreeing to, before anything is read</h3>
+          <p class="small">
+            Nothing touches the codebase until this is acknowledged, and the local server enforces that
+            rather than merely displaying it — the run endpoint returns <code>403</code> without a
+            recorded acceptance. The wording separates what infraviz does from what your agent does,
+            because claiming "no data leaves your machine" would be false. It is recorded per repository,
+            so a different repo asks again.
+          </p>
+          <figure class="plate">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="shots/02-consent-dark.png" />
+              <img src="shots/02-consent.png" alt="The consent gate, naming the repository path and listing five points: infraviz receives nothing, your coding agent is what reads your code, cloud connectors only look, the output is confidential, and the agent may run your tests." width="1320" height="1560" loading="lazy" />
+            </picture>
+            <figcaption><b>gate</b> Five points, including the two that are inconvenient to say: your agent reads more of the repo than a normal question would, and it may run your test suite.</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- 03 -->
+      <div class="step">
+        <div class="step-n">03</div>
+        <div class="step-body">
+          <h3>Choose the model and how hard it should think</h3>
+          <p class="small">
+            The picker is available at every run, not just the first, because the choice is not one
+            decision. A cheap scan maps the whole repository; the expensive per-service passes come later
+            and can use a different model. This run used <strong>Sonnet</strong>.
+          </p>
+          <figure class="plate">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="shots/04-model-dark.png" />
+              <img src="shots/04-model.png" alt="The same start screen with the model selector open on 'Sonnet 5 — balanced' and an effort selector set to medium." width="1520" height="1140" loading="lazy" />
+            </picture>
+          </figure>
+        </div>
+      </div>
+
+      <!-- 04 -->
+      <div class="step">
+        <div class="step-n">04</div>
+        <div class="step-body">
+          <h3>Watch it work</h3>
+          <p class="small">
+            A scan takes minutes, and a page that sits still for minutes is indistinguishable from a page
+            that has hung. So the agent reports each step as it goes, and the server streams those steps
+            straight into the open tab — including when the agent is running in your IDE rather than here.
+          </p>
+          <figure class="plate">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="shots/05-analysing-dark.png" />
+              <img src="shots/05-analysing.png" alt="A live progress panel reading 'Scanning your codebase', 1m 06s, 4 steps, with timestamped lines: reading the Phoenix router and controllers, found 5 HTTP endpoints across 4 controllers, reading conversation, inbox and directory channels." width="1620" height="1020" loading="lazy" />
+            </picture>
+            <figcaption><b>live</b> Real timestamps from the run that produced this page. The agent followed the thin routers into the channels and the domain modules underneath, which is where wavelink's real behaviour lives.</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- 05 -->
+      <div class="step">
+        <div class="step-n">05</div>
+        <div class="step-body">
+          <h3>The overview leads with what it cannot answer yet</h3>
+          <p class="small">
+            Four questions, scored separately, because different questions need different artifacts. A
+            half-analysed system that presents itself as complete is worse than one that admits the gap —
+            so coverage is stated per question, and any partial answer names which services it covers.
+          </p>
+          <p class="small">
+            Underneath, everything found so far collapses into one ranked list across the whole system.
+            Ranking is mechanical and stated rather than a black box: risk before improvement, low effort
+            before high, and a boost for anything landing in several services — because that is one
+            change, not five. Findings citing the same substring in the same file are merged, so three
+            services reporting the same shared-module problem become one item, not three tickets that
+            never get made.
+          </p>
+          <div class="note-inline">
+            <b>Depth is tiered on purpose, and abstaining is a correct answer.</b> wavelink's health check
+            is ten lines with no branches. Its entire entry reads: <em>"Returns a static ok without
+            checking any dependency, which is the correct shape for a load balancer liveness probe."</em>
+            No findings, no diagrams. Padding it would only train you to skim past the real ones.
+          </div>
+        </div>
+      </div>
+
+      <!-- 06 -->
+      <div class="step">
+        <div class="step-n">06</div>
+        <div class="step-body">
+          <h3>Then go one service deep, on the services you choose</h3>
+          <p class="small">
+            Per-service passes are the expensive part, so they are never done for the whole repo at once.
+            You pick. Each service gets a sequence diagram of what actually happens in order, a topology
+            of who talks to whom, and a ranked list of what to improve. Look for the boxed phases in the
+            diagram: one marks a synchronous call to a third-party service standing between the user and
+            the durable write, the other marks work that keeps running after the response was already
+            sent — which is where the interesting failure modes live.
+          </p>
+
+        </div>
+      </div>
+
+    </div>
+
+    <div class="explore" id="explore">
+      <div class="explore-head">
+        <p class="eyebrow"><b>Live</b> &nbsp;not a screenshot</p>
+        <h3 class="explore-title">Everything above, running.</h3>
+        <p class="small explore-lede">
+          This is the viewer itself, loaded with that run's output — the overview, all seven services,
+          the sequence diagrams and every lens. Open <b>Conversation Channel</b> or <b>Media</b> in the
+          sidebar, click a step and watch the matching hop light up with its code location. Nothing here
+          can start a run or copy a prompt: there is no agent behind this page, so those controls are
+          absent rather than dead.
+        </p>
+      </div>
+
+      <figure class="live">
+        <div class="live-frame" id="live-frame">
+          <div class="live-bar">
+            <span class="dot"></span>
+            <span class="path">wavelink &middot; read only</span>
+            <span class="live-actions">
+              <button type="button" class="live-btn" id="live-fs" aria-label="Show the viewer fullscreen">&#8663; Fullscreen</button>
+              <a class="live-btn" href="demo/" target="_blank" rel="noopener">&#8599; New tab</a>
+            </span>
+          </div>
+          <div class="live-stage">
+            <iframe id="live-iframe" data-src="demo/" title="The infraviz viewer, showing the completed analysis of wavelink"></iframe>
+            <div class="live-offer">
+              <p>
+                The viewer needs about 1024px to show its sidebar, and the sidebar is how you move
+                between services. In a window this narrow it reads far better in a tab of its own.
+              </p>
+              <a class="live-cta" href="demo/" target="_blank" rel="noopener">Open the viewer &#8599;</a>
+              <button type="button" class="live-btn" id="live-load">Load it here anyway</button>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>live</b> Same bundle as <code>npx infraviz view</code>, in read-only mode against a static
+          snapshot of that run. Fullscreen keeps this bar, so the way back out is where the way in was —
+          or press <kbd>Esc</kbd>.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ WHAT YOU GET ============ -->
+  <section id="lenses">
+    <p class="eyebrow"><b>IV.</b> &nbsp;What you get</p>
+    <div class="col">
+      <h2>Seven lenses, and the honesty to leave one blank.</h2>
+      <p>
+        Not every lens applies to every service, and none of them are offered when the data behind them
+        does not exist.
+      </p>
+    </div>
+
+    <dl class="lenses">
+      <div class="lens"><dt>Flow</dt><dd>The real call graph. Click a step, the matching hop highlights, with its code location.</dd></div>
+      <div class="lens"><dt>Load / scaling</dt><dd>Measured numbers when they exist — otherwise it says plainly that load is <em>not measured</em>.</dd></div>
+      <div class="lens"><dt>Security</dt><dd>Findings anchored to the hop they affect, in severity colour, each citing a line.</dd></div>
+      <div class="lens"><dt>Compliance</dt><dd>Data handling, retention, egress.</dd></div>
+      <div class="lens"><dt>Reliability</dt><dd>Compounding failure across dependencies. Drag the fan-out slider and watch end-to-end success collapse.</dd></div>
+      <div class="lens"><dt>Deployment</dt><dd>What is actually running and what it actually costs — provisioned against observed, from a read-only cloud session you already have.</dd></div>
+      <div class="lens"><dt>Optimise</dt><dd>Ranked improvements: cost of inaction, gain, effort, mechanism. Each copyable as a task for your agent.</dd></div>
+    </dl>
+
+    <div class="col" style="margin-top: 40px;">
+      <p class="small">
+        Plus a sequence diagram per service, auto-laid-out, including the work that continues
+        <em>after</em> the HTTP response. And production checks that follow from what kind of system you
+        actually built — an LLM application and a CRUD endpoint fail in different ways. Every check names
+        an established reference, and a check nobody examined reads as <em>unknown</em>, never as a pass.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ WHO / WHY ============ -->
+  <section id="why">
+    <p class="eyebrow"><b>V.</b> &nbsp;Who this is for</p>
+
+    <p class="pull">
+      The people who need this are the ones who already stopped trusting generated documentation.
+    </p>
+    <p class="pull-attrib">If you have never been burned by a confident, wrong diagram, you may not need the citations.</p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>You inherited the system</h3>
+        <p>A map of a codebase nobody currently understands, where every line can be traced back to the file it came from — so you can check the parts you doubt instead of accepting all of it.</p>
+      </div>
+      <div class="card">
+        <h3>You are about to be on call for it</h3>
+        <p>The compounding-failure view and the work-after-the-response boxes surface the failure modes that only show up at 3am, before they do.</p>
+      </div>
+      <div class="card">
+        <h3>You need to justify the next quarter</h3>
+        <p>One ranked list across the whole system, deduplicated, with the cost of inaction stated per item — which is the shape a prioritisation argument actually needs.</p>
+      </div>
+      <div class="card">
+        <h3>Your docs drift the week they are written</h3>
+        <p><code>verify --strict</code> in CI fails the build when the diagrams stop describing the code, which is the only version of documentation maintenance that survives contact with a deadline.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TRADE-OFFS ============ -->
+  <section id="tradeoffs">
+    <p class="eyebrow"><b>VI.</b> &nbsp;What it costs you</p>
+    <div class="col">
+      <h2>The case against, stated by the people who built it.</h2>
+      <p>
+        None of this is disqualifying, and all of it is easier to hear now than after you have pointed it
+        at a work repository.
+      </p>
+    </div>
+
+    <div class="ledger">
+      <div class="entry">
+        <h3>Your code still goes to your AI vendor — and more of it than usual</h3>
+        <p>
+          infraviz sends nothing anywhere. Your agent does, exactly as it does for every other request you
+          make of it. But the spec asks it to read <em>broadly</em>: your routers, the modules they import,
+          your infrastructure config, and your tests. That is more of your repository than a typical
+          question touches. If your organisation restricts which repos may be sent to an AI provider, that
+          restriction applies here unchanged.
+        </p>
+      </div>
+
+      <div class="entry">
+        <h3>The output is more sensitive than your source</h3>
+        <p>
+          <code>.infraviz/</code> holds verbatim code snippets and a prioritised, file-accurate map of your
+          weak points. That is useful to you and equally useful to an attacker. Gitignore it by default —
+          infraviz does this for you — and never commit it to a public repo. It is not "safe to commit".
+        </p>
+      </div>
+
+      <div class="entry">
+        <h3>The agent may run your test suite</h3>
+        <p>
+          The spec tells it to, because tests reveal what is actually exercised. On a work machine that
+          could reach real dev services, write cache files, or consume API quota. Tell it not to, if that
+          matters — it will listen.
+        </p>
+      </div>
+
+      <div class="entry">
+        <h3>Depth costs real money and real time</h3>
+        <p>
+          The scan is cheap. Per-service passes are not, which is exactly why they are opt-in one service
+          at a time rather than a single whole-repo run that bills for hours and produces more output than
+          anyone reads.
+        </p>
+      </div>
+
+      <div class="entry neutral">
+        <h3>The consent gate cannot stop your agent reading your files</h3>
+        <p>
+          It refuses to hand over the prompts until you accept, so the analysis proper cannot proceed. But
+          an agent already has your file tools, and no third-party package can gate them. If you want
+          nothing touched before you have read the notice, say so in your first message — that is the only
+          instruction with enough weight, and it works.
+        </p>
+      </div>
+
+      <div class="entry neutral">
+        <h3>Not everything is built</h3>
+        <p>
+          The cost and rate-limit lenses aren't portable yet, so they are not offered rather than showing
+          someone else's numbers. The MCP server is under consideration rather than planned. The desktop
+          app is an Electron shell still being finished. All three are absent on purpose instead of faked.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECURITY POSTURE ============ -->
+  <section id="posture">
+    <p class="eyebrow"><b>VII.</b> &nbsp;What infraviz itself receives</p>
+    <div class="col">
+      <h2>Nothing. There is no service behind it.</h2>
+      <p class="small">
+        This is structural rather than a promise, and it is checkable from the published package.
+      </p>
+    </div>
+
+    <div class="lenses" style="max-width: 52rem;">
+      <div class="lens"><dt>Network calls in the CLI</dt><dd><strong>None.</strong> The npm download is the only network activity.</dd></div>
+      <div class="lens"><dt>Server binding</dt><dd><code>127.0.0.1</code> only — not reachable from your network.</dd></div>
+      <div class="lens"><dt>Telemetry &amp; analytics</dt><dd>None.</dd></div>
+      <div class="lens"><dt>Third-party dependencies</dt><dd>Two — <code>zod</code> and <code>cross-spawn</code>.</dd></div>
+      <div class="lens"><dt>Cloud connectors</dt><dd>Use the <code>aws</code>/<code>oc</code>/<code>kubectl</code> session you already have. No token field, nothing stored, and every command is checked to be read-only before it runs.</dd></div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div class="col">
+      <h2>Try it on something you don't mind reading out loud.</h2>
+      <p class="small">
+        A non-sensitive repository first, so you see the shape of the output before pointing it at
+        anything confidential. The scan takes a couple of minutes and gives you the whole map to choose
+        from.
+      </p>
+    </div>
+
+    <div class="cta">
+      <span class="cmd"><span class="prompt">$ </span>npx infraviz view</span>
+      <span class="cta-note">
+        then <code>npx infraviz verify --strict</code> in CI, once you trust it
+      </span>
+    </div>
+
+    <p class="colophon">
+      infraviz is MIT licensed and developed in the open at
+      <a href="https://github.com/rishavraj221/infraviz">github.com/rishavraj221/infraviz</a>.
+      The screenshots and the embedded viewer on this page all come from a single unedited run against a
+      Phoenix codebase; the <code>verify</code> output quoted above is the output of that run. The embed
+      is the real viewer bundle in read-only mode — same code, static data, no server behind it. Each
+      screenshot ships in both themes and follows yours. The findings shown are real findings in that repository, published with its author's
+      permission.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  /* The live viewer: loaded on demand, escapable two ways.
+     Kept deliberately small and dependency-free — this page is a static file. */
+  (function () {
+    var frame = document.getElementById("live-frame");
+    if (!frame) return;
+    var iframe = document.getElementById("live-iframe");
+    var fsBtn = document.getElementById("live-fs");
+    var loadBtn = document.getElementById("live-load");
+
+    function load() {
+      if (!iframe.getAttribute("src")) iframe.setAttribute("src", iframe.dataset.src);
+      frame.classList.add("is-loaded");
+    }
+
+    /* Half a megabyte of app has no business loading before the reader has
+       scrolled anywhere near it — and on a phone, not until they ask. */
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      if ("IntersectionObserver" in window) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) { load(); io.disconnect(); }
+          });
+        }, { rootMargin: "500px" });
+        io.observe(frame);
+      } else {
+        load();
+      }
+    }
+
+    if (loadBtn) loadBtn.addEventListener("click", load);
+
+    var enter = frame.requestFullscreen || frame.webkitRequestFullscreen;
+    var exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!enter) {
+      fsBtn.hidden = true;
+    } else {
+      fsBtn.addEventListener("click", function () {
+        load();
+        var current = document.fullscreenElement || document.webkitFullscreenElement;
+        if (current === frame) exit.call(document);
+        else enter.call(frame);
+      });
+    }
+
+    function sync() {
+      var on = (document.fullscreenElement || document.webkitFullscreenElement) === frame;
+      fsBtn.innerHTML = on ? "\u2715 Exit fullscreen" : "\u21F1 Fullscreen";
+      fsBtn.setAttribute("aria-label", on ? "Exit fullscreen and return to the page" : "Show the viewer fullscreen");
+    }
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+  })();
+</script>
+
+</body>
+</html>
