@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A knowledge assistant that names its own sources</title>
-<meta name="description" content="Three retrievals run in parallel, a thinking model reads them with tools, and every answer carries its source.">
+<title>A product chatbot, and the pipeline that feeds it</title>
+<meta name="description" content="A chat app that answers product questions for sales agents, and the crawling, parsing and retrieval work behind it.">
 <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -15,15 +15,15 @@
 
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Rishav Raj">
-<meta property="og:title" content="A Knowledge Assistant That Names Its Own Sources | Rishav Raj">
-<meta property="og:description" content="Three retrievals run in parallel, a thinking model reads them with tools, and every answer carries its source.">
+<meta property="og:title" content="A Product Chatbot, and the Pipeline That Feeds It | Rishav Raj">
+<meta property="og:description" content="A chat app that answers product questions for sales agents, and the crawling, parsing and retrieval work behind it.">
 <meta property="og:url" content="https://rishavraj.info/projects/knowledge-assistant.html">
 <meta property="og:image" content="https://rishavraj.info/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="A Knowledge Assistant That Names Its Own Sources | Rishav Raj">
-<meta name="twitter:description" content="Three retrievals run in parallel, a thinking model reads them with tools, and every answer carries its source.">
+<meta name="twitter:title" content="A Product Chatbot, and the Pipeline That Feeds It | Rishav Raj">
+<meta name="twitter:description" content="A chat app that answers product questions for sales agents, and the crawling, parsing and retrieval work behind it.">
 <meta name="twitter:image" content="https://rishavraj.info/og-image.png">
 </head>
 <body>
@@ -32,253 +32,381 @@
 
   <a class="back" href="../index.html">Rishav Raj</a>
 
-  <h1 class="title">A knowledge assistant that names its own sources</h1>
+  <h1 class="title">A product chatbot, and the pipeline that feeds it</h1>
   <p class="standfirst">
-    Sales agents get client questions they need to answer the same day. The answer is
-    usually somewhere in the internal knowledge base, but finding it takes time they do
-    not have.
+    A client asks a sales agent something about a product. The answer is almost always
+    sitting in our Salesforce knowledge base. Getting to it takes longer than the question
+    is worth, so the agent asks a person instead. We were asked to build the thing that
+    does the looking.
   </p>
 
   <div class="rows small">
     <div class="row"><div class="k">Where</div><div class="v">Evernorth Health Services, part of the Cigna Group</div></div>
+    <div class="row"><div class="k">Shape</div><div class="v">Team project, built from scratch. One piece of a larger product programme</div></div>
+    <div class="row"><div class="k">My part</div><div class="v">System design, the UI, the backend services, hosting and everything after it went live</div></div>
   </div>
 
   <hr>
 
-  <h2>Worked on</h2>
+  <h2>What is on this page</h2>
   <ul class="toc">
-    <li><a href="#retrievals">3 parallel retrievals</a></li>
-    <li><a href="#caching">Caching</a></li>
-    <li><a href="#okf">OKF (Open Knowledge Format) retrieval</a></li>
-    <li><a href="#ingestion">Ingestion</a></li>
-    <li><a href="#regression">Regression testing</a></li>
-    <li><a href="#consistency">Keeping the judge consistent</a></li>
-    <li><a href="#admin">Admin pages</a></li>
-    <li><a href="#deployment">Deployment</a></li>
+    <li><a href="#kx">Where the knowledge lived</a></li>
+    <li><a href="#ingestion">Getting it out</a></li>
+    <li><a href="#sme">The page the experts live in</a></li>
+    <li><a href="#ask">Answering a question</a></li>
+    <li><a href="#broke">Where the first version broke</a></li>
+    <li><a href="#okf">Files and tools instead of chunks</a></li>
+    <li><a href="#evals">Picking a model with feedback</a></li>
+    <li><a href="#knobs">Everything as a knob</a></li>
+    <li><a href="#running">Running it</a></li>
   </ul>
 
   <hr>
 
-  <h2 id="requirement">The requirement</h2>
+  <h2 id="brief">The brief</h2>
   <p>
-    Sales agents needed answers without going to a product expert or another team. They
-    forward these to clients, so they also had to be able to check the answer before
-    sending it. Every answer comes with a link to the source it came from.
+    Nothing existed. No app, no pipeline, no cleaned up copy of the content. We had the
+    products, we had the knowledge base, and we had a chat window to build. An agent types
+    a question, gets an answer, and can see where it came from before forwarding it on.
+  </p>
+  <p>
+    That last part shaped a lot of what follows. An agent is going to paste this to a
+    client. A confident wrong answer is worse than no answer.
   </p>
 
-  <h2 id="app">The app</h2>
+  <h2 id="kx">Where the knowledge lived</h2>
   <p>
-    After signing in the agent gets a chat screen with suggested questions. No product
-    selector, the classifier works that out from the question. Answers come back with links
-    to the articles behind them, and follow ups keep context, since "what about for the
-    second one" needs the earlier turns.
-  </p>
-  <p>
-    If an SME or team is listed for that domain, the answer names them too.
+    Knowledge Exchange is our Salesforce knowledge base. Per product there are a few seed
+    articles. Each of those links out to more articles, and those link further. Hanging off
+    the articles are attachments, and the attachments are usually where the real answer is.
   </p>
 
   <figure>
-    <svg class="fig" viewBox="0 0 640 512" role="img"
-         aria-label="Request flow from Okta sign in through the classifier, three parallel retrievals, and a thinking model with a retry loop.">
+    <svg class="fig" viewBox="0 0 640 340" role="img"
+         aria-label="The shape of Knowledge Exchange. One space per product, a few seed articles each, sub links below them, and attachments hanging off the articles.">
       <defs>
-        <marker id="h1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <marker id="k1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
           <path class="hd" d="M0 0 L8 4 L0 8 z"/>
         </marker>
       </defs>
 
-      <!-- okta -->
-      <rect class="b" x="225" y="8" width="190" height="42" rx="6"/>
-      <text class="t" x="320" y="26" text-anchor="middle">Okta SSO</text>
-      <text class="s" x="320" y="40" text-anchor="middle">session and permission check</text>
-      <path class="ar" d="M320 50 L320 72" marker-end="url(#h1)"/>
+      <rect class="b-a" x="225" y="6" width="190" height="42" rx="6"/>
+      <text class="t" x="320" y="26" text-anchor="middle">Knowledge Exchange</text>
+      <text class="s" x="320" y="41" text-anchor="middle">Salesforce, behind SSO</text>
 
-      <!-- chat ui -->
-      <rect class="b" x="200" y="74" width="240" height="46" rx="6"/>
-      <text class="t" x="320" y="93" text-anchor="middle">Chat interface</text>
-      <text class="s" x="320" y="108" text-anchor="middle">suggested questions, no product selected</text>
-      <path class="ar" d="M320 120 L320 150" marker-end="url(#h1)"/>
-      <text class="l" x="330" y="139">whole conversation, latest question last</text>
+      <path class="ar" d="M320 48 L320 66"/>
+      <path class="ar" d="M105 66 L535 66"/>
+      <path class="ar" d="M105 66 L105 86" marker-end="url(#k1)"/>
+      <path class="ar" d="M320 66 L320 86" marker-end="url(#k1)"/>
+      <path class="ar" d="M535 66 L535 86" marker-end="url(#k1)"/>
 
-      <!-- out of scope, kept on the left so the retry loop owns the right -->
-      <path class="ar" d="M170 182 L136 182" marker-end="url(#h1)"/>
-      <rect class="b" x="6" y="164" width="126" height="36" rx="6"/>
-      <text class="s" x="69" y="180" text-anchor="middle">out of scope,</text>
-      <text class="s" x="69" y="193" text-anchor="middle">politely declined</text>
+      <rect class="b" x="25"  y="88" width="160" height="32" rx="6"/>
+      <text class="t" x="105" y="109" text-anchor="middle">Product A</text>
+      <rect class="b" x="240" y="88" width="160" height="32" rx="6"/>
+      <text class="t" x="320" y="109" text-anchor="middle">Product B</text>
+      <rect class="b" x="455" y="88" width="160" height="32" rx="6"/>
+      <text class="t" x="535" y="109" text-anchor="middle">Product C</text>
 
-      <!-- classifier -->
-      <rect class="b-a" x="170" y="152" width="300" height="60" rx="6"/>
-      <text class="t" x="320" y="172" text-anchor="middle">Intent classifier</text>
-      <text class="s" x="320" y="188" text-anchor="middle">in scope?  which product?</text>
-      <text class="s" x="320" y="203" text-anchor="middle">returns the content set to retrieve over</text>
+      <path class="ar" d="M320 120 L320 138"/>
+      <path class="ar" d="M180 138 L460 138"/>
+      <path class="ar" d="M180 138 L180 158" marker-end="url(#k1)"/>
+      <path class="ar" d="M320 138 L320 158" marker-end="url(#k1)"/>
+      <path class="ar" d="M460 138 L460 158" marker-end="url(#k1)"/>
 
-      <!-- stem down into the fan out -->
-      <path class="ar" d="M320 212 L320 244"/>
+      <rect class="b" x="120" y="160" width="120" height="30" rx="6"/>
+      <text class="s" x="180" y="180" text-anchor="middle">Seed article</text>
+      <rect class="b" x="260" y="160" width="120" height="30" rx="6"/>
+      <text class="s" x="320" y="180" text-anchor="middle">Seed article</text>
+      <rect class="b" x="400" y="160" width="120" height="30" rx="6"/>
+      <text class="s" x="460" y="180" text-anchor="middle">Seed article</text>
 
-      <!-- retry loop, clear of every box, entering the stem -->
-      <path class="ard" d="M470 406 L634 406 L634 232 L332 232" marker-end="url(#h1)"/>
-      <text class="l" x="630" y="224" text-anchor="end">no answer yet, retry with a different content set, up to 3</text>
+      <path class="ar" d="M320 190 L320 206"/>
+      <path class="ar" d="M250 206 L390 206"/>
+      <path class="ar" d="M250 206 L250 224" marker-end="url(#k1)"/>
+      <path class="ar" d="M390 206 L390 224" marker-end="url(#k1)"/>
 
-      <!-- fan out -->
-      <path class="ar" d="M105 244 L535 244"/>
-      <path class="ar" d="M105 244 L105 264" marker-end="url(#h1)"/>
-      <path class="ar" d="M320 244 L320 264" marker-end="url(#h1)"/>
-      <path class="ar" d="M535 244 L535 264" marker-end="url(#h1)"/>
+      <rect class="b" x="190" y="226" width="120" height="30" rx="6"/>
+      <text class="s" x="250" y="246" text-anchor="middle">Sub link</text>
+      <rect class="b" x="330" y="226" width="120" height="30" rx="6"/>
+      <text class="s" x="390" y="246" text-anchor="middle">Sub link</text>
+      <text class="l" x="462" y="245">and their own sub links, to depth k</text>
 
-      <!-- three retrievals -->
-      <rect class="b" x="15"  y="266" width="180" height="68" rx="6"/>
-      <text class="t" x="105" y="287" text-anchor="middle">A. Article routing</text>
-      <text class="s" x="105" y="304" text-anchor="middle">index.json picks files,</text>
-      <text class="s" x="105" y="318" text-anchor="middle">loads whole .md</text>
+      <path class="ar" d="M250 256 L250 272"/>
+      <path class="ar" d="M390 256 L390 272"/>
+      <path class="ar" d="M250 272 L390 272"/>
+      <path class="ar" d="M320 272 L320 286" marker-end="url(#k1)"/>
 
-      <rect class="b" x="230" y="266" width="180" height="68" rx="6"/>
-      <text class="t" x="320" y="287" text-anchor="middle">B. Chunk search</text>
-      <text class="s" x="320" y="304" text-anchor="middle">Azure AI Search,</text>
-      <text class="s" x="320" y="318" text-anchor="middle">top 20 with metadata</text>
-
-      <rect class="b" x="445" y="266" width="180" height="68" rx="6"/>
-      <text class="t" x="535" y="287" text-anchor="middle">C. OKF concepts</text>
-      <text class="s" x="535" y="304" text-anchor="middle">markdown bundle,</text>
-      <text class="s" x="535" y="318" text-anchor="middle">one file per concept</text>
-
-      <!-- converge -->
-      <path class="ar" d="M105 334 L105 354"/>
-      <path class="ar" d="M320 334 L320 354"/>
-      <path class="ar" d="M535 334 L535 354"/>
-      <path class="ar" d="M105 354 L535 354"/>
-      <path class="ar" d="M320 354 L320 378" marker-end="url(#h1)"/>
-
-      <!-- thinking model -->
-      <rect class="b-a" x="170" y="380" width="300" height="54" rx="6"/>
-      <text class="t" x="320" y="401" text-anchor="middle">Thinking model, with tools</text>
-      <text class="s" x="320" y="418" text-anchor="middle">reads what came back, answers only if grounded</text>
-
-      <!-- outcomes -->
-      <path class="ar" d="M390 434 L390 452 L470 452 L470 468" marker-end="url(#h1)"/>
-      <rect class="b" x="365" y="470" width="215" height="34" rx="6"/>
-      <text class="t" x="472" y="491" text-anchor="middle">Answer with cited sources</text>
-
-      <path class="ard" d="M250 434 L250 452 L170 452 L170 468" marker-end="url(#h1)"/>
-      <rect class="b" x="60" y="470" width="215" height="34" rx="6"/>
-      <text class="s" x="167" y="491" text-anchor="middle">3 tries spent, not enough information</text>
+      <rect class="b-a" x="170" y="288" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="308" text-anchor="middle">Attachments on the article</text>
+      <text class="s" x="320" y="324" text-anchor="middle">pdf, pptx, docx, xlsx</text>
     </svg>
-    <figcaption>Solid path is the happy case. Dashed is the retry loop and the give up path.</figcaption>
+    <figcaption>One tree per product. An article on its own says less than the branch it hangs from, which is why the structure had to survive the crawl.</figcaption>
   </figure>
 
-  <h4>Why the thinking model uses tools</h4>
+  <h2 id="ingestion">Getting it out</h2>
   <p>
-    The model calls for what it wants to read instead of getting everything in one prompt,
-    so it can judge whether it has enough before answering. If not it retries with different
-    content, up to three times, then says it does not have enough information. I wanted it
-    to be able to give up.
+    For the proof of concept we were told to crawl it. So there is a crawler, driven by
+    Playwright, that signs in with its own role. It only sees what that role is allowed to
+    see, which keeps the crawler inside the same content boundary the app should have.
   </p>
-
-  <h2 id="caching">Caching</h2>
   <p>
-    The same questions come up constantly. Two caches sit on this path, mainly so the same
-    question gives the same answer twice.
+    From each seed it walks the links down to a set depth. Page content becomes markdown.
+    Each attachment type gets its own parser. Then a small model tidies the output into
+    consistent markdown, because a table lifted out of a pdf and a table lifted out of a
+    deck do not come out looking anything alike.
   </p>
 
   <figure>
-    <svg class="fig" viewBox="0 0 640 290" role="img"
-         aria-label="Two caches on the answer path. An answer cache in front of everything, a retrieval cache behind it, and an ingestion run that invalidates both by bumping the corpus version.">
+    <svg class="fig" viewBox="0 0 640 470" role="img"
+         aria-label="Ingestion pipeline. Cron drives a Playwright crawler, page content and attachments are parsed to markdown, a content hash decides whether anything downstream runs, and three artifacts are produced.">
       <defs>
-        <marker id="h7" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <marker id="k2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
           <path class="hd" d="M0 0 L8 4 L0 8 z"/>
         </marker>
       </defs>
 
-      <rect class="b" x="195" y="8" width="230" height="32" rx="6"/>
-      <text class="t" x="310" y="29" text-anchor="middle">Question, after the classifier</text>
-      <path class="ar" d="M310 40 L310 54" marker-end="url(#h7)"/>
+      <rect class="b" x="15" y="8" width="150" height="42" rx="6"/>
+      <text class="t" x="90" y="26" text-anchor="middle">Cron, every 24h</text>
+      <text class="s" x="90" y="41" text-anchor="middle">re crawl from the seeds</text>
+      <path class="ar" d="M165 29 L193 29" marker-end="url(#k2)"/>
 
-      <rect class="b-a" x="140" y="56" width="340" height="48" rx="6"/>
-      <text class="t" x="310" y="75" text-anchor="middle">Answer cache</text>
-      <text class="m" x="310" y="92" text-anchor="middle">hash(question, content, corpus+prompt+model ver)</text>
-      <path class="ar" d="M480 80 L494 80" marker-end="url(#h7)"/>
-      <rect class="b" x="496" y="62" width="142" height="36" rx="6"/>
-      <text class="s" x="567" y="77" text-anchor="middle">answer returned,</text>
-      <text class="s" x="567" y="90" text-anchor="middle">nothing else runs</text>
+      <rect class="b-a" x="195" y="6" width="250" height="46" rx="6"/>
+      <text class="t" x="320" y="26" text-anchor="middle">Playwright crawler</text>
+      <text class="s" x="320" y="42" text-anchor="middle">signs in with its own role</text>
 
-      <path class="ar" d="M310 104 L310 124" marker-end="url(#h7)"/>
-      <text class="l" x="318" y="118">miss</text>
+      <path class="ar" d="M320 52 L320 70"/>
+      <path class="ar" d="M105 70 L535 70"/>
+      <path class="ar" d="M105 70 L105 90" marker-end="url(#k2)"/>
+      <path class="ar" d="M320 70 L320 90" marker-end="url(#k2)"/>
+      <path class="ar" d="M535 70 L535 90" marker-end="url(#k2)"/>
 
-      <rect class="b-a" x="140" y="126" width="340" height="44" rx="6"/>
-      <text class="t" x="310" y="145" text-anchor="middle">Retrieval cache</text>
-      <text class="m" x="310" y="161" text-anchor="middle">hash(content set, corpus ver)</text>
-      <path class="ar" d="M480 148 L494 148" marker-end="url(#h7)"/>
-      <rect class="b" x="496" y="130" width="142" height="36" rx="6"/>
-      <text class="s" x="567" y="152" text-anchor="middle">skip A, B and C</text>
+      <rect class="b" x="15"  y="92" width="180" height="58" rx="6"/>
+      <text class="t" x="105" y="112" text-anchor="middle">Page content</text>
+      <text class="s" x="105" y="129" text-anchor="middle">html to markdown</text>
 
-      <path class="ar" d="M310 170 L310 190" marker-end="url(#h7)"/>
-      <text class="l" x="318" y="184">miss</text>
+      <rect class="b" x="230" y="92" width="180" height="58" rx="6"/>
+      <text class="t" x="320" y="112" text-anchor="middle">Attachments</text>
+      <text class="s" x="320" y="128" text-anchor="middle">one parser per type,</text>
+      <text class="s" x="320" y="142" text-anchor="middle">xlsx docx pdf pptx</text>
 
-      <rect class="b" x="140" y="192" width="340" height="32" rx="6"/>
-      <text class="t" x="310" y="213" text-anchor="middle">Run A, B and C, then the thinking model</text>
-      <path class="ar" d="M310 224 L310 242" marker-end="url(#h7)"/>
+      <rect class="b" x="445" y="92" width="180" height="58" rx="6"/>
+      <text class="t" x="535" y="112" text-anchor="middle">Sub links</text>
+      <text class="s" x="535" y="129" text-anchor="middle">queued, to depth k</text>
+      <path class="ard" d="M625 121 L634 121 L634 40 L447 40" marker-end="url(#k2)"/>
 
-      <rect class="b" x="140" y="244" width="340" height="32" rx="6"/>
-      <text class="t" x="310" y="265" text-anchor="middle">Store in both, return the answer</text>
+      <path class="ar" d="M105 150 L105 168"/>
+      <path class="ar" d="M320 150 L320 168"/>
+      <path class="ar" d="M105 168 L320 168"/>
+      <path class="ar" d="M320 168 L320 186" marker-end="url(#k2)"/>
 
-      <rect class="b" x="0" y="98" width="122" height="44" rx="6"/>
-      <text class="s" x="61" y="116" text-anchor="middle">Ingestion run</text>
-      <text class="s" x="61" y="131" text-anchor="middle">bumps corpus ver</text>
-      <path class="ard" d="M122 110 L131 110 L131 80 L138 80" marker-end="url(#h7)"/>
-      <path class="ard" d="M122 130 L131 130 L131 148 L138 148" marker-end="url(#h7)"/>
+      <rect class="b-a" x="170" y="188" width="300" height="44" rx="6"/>
+      <text class="t" x="320" y="208" text-anchor="middle">Small model tidies it up</text>
+      <text class="s" x="320" y="224" text-anchor="middle">one markdown shape, headings kept</text>
+
+      <path class="ar" d="M320 232 L320 250" marker-end="url(#k2)"/>
+
+      <rect class="b" x="210" y="252" width="220" height="42" rx="6"/>
+      <text class="t" x="320" y="271" text-anchor="middle">Content hash</text>
+      <text class="s" x="320" y="287" text-anchor="middle">same as last night?</text>
+
+      <path class="ar" d="M430 273 L488 273" marker-end="url(#k2)"/>
+      <text class="l" x="437" y="267">same</text>
+      <rect class="b" x="490" y="255" width="145" height="36" rx="6"/>
+      <text class="s" x="562" y="270" text-anchor="middle">skip, nothing</text>
+      <text class="s" x="562" y="284" text-anchor="middle">downstream runs</text>
+
+      <path class="ar" d="M320 294 L320 316" marker-end="url(#k2)"/>
+      <text class="l" x="328" y="309">changed</text>
+
+      <rect class="b" x="205" y="318" width="230" height="44" rx="6"/>
+      <text class="m" x="320" y="337" text-anchor="middle">knowledge_base/</text>
+      <text class="s" x="320" y="352" text-anchor="middle">folders mirror the link tree</text>
+
+      <path class="ar" d="M320 362 L320 378"/>
+      <path class="ar" d="M120 378 L520 378"/>
+      <path class="ar" d="M120 378 L120 398" marker-end="url(#k2)"/>
+      <path class="ar" d="M320 378 L320 398" marker-end="url(#k2)"/>
+      <path class="ar" d="M520 378 L520 398" marker-end="url(#k2)"/>
+
+      <rect class="b" x="25"  y="400" width="190" height="60" rx="6"/>
+      <text class="m" x="120" y="420" text-anchor="middle">okf/</text>
+      <text class="s" x="120" y="436" text-anchor="middle">one file per concept,</text>
+      <text class="s" x="120" y="450" text-anchor="middle">frontmatter and links</text>
+
+      <rect class="b" x="228" y="400" width="184" height="60" rx="6"/>
+      <text class="t" x="320" y="420" text-anchor="middle">Search chunks</text>
+      <text class="s" x="320" y="436" text-anchor="middle">Azure AI Search,</text>
+      <text class="s" x="320" y="450" text-anchor="middle">with metadata</text>
+
+      <rect class="b" x="425" y="400" width="190" height="60" rx="6"/>
+      <text class="t" x="520" y="420" text-anchor="middle">Sheets as tables</text>
+      <text class="s" x="520" y="436" text-anchor="middle">kept tabular, queried</text>
+      <text class="s" x="520" y="450" text-anchor="middle">rather than chunked</text>
     </svg>
-    <figcaption>The dashed lines are invalidation. One ingestion run retires every cached entry for that product.</figcaption>
+    <figcaption>A page is only re parsed if its hash moved. The three things at the bottom are what the app actually reads.</figcaption>
   </figure>
 
+  <h4>Two things I would do the same way again</h4>
+  <ul>
+    <li>
+      <strong>Everything becomes markdown first.</strong> One intermediate format means one
+      set of rules downstream, and a re crawl you can read as a diff.
+    </li>
+    <li>
+      <strong>The folder path carries the context.</strong> The directory mirrors the link
+      tree, so a file knows which product and which branch it came from without anyone
+      writing that down separately.
+    </li>
+  </ul>
+
+  <h2 id="sme">The page the experts live in</h2>
   <p>
-    The field that matters is the corpus version. An ingestion run bumps it and retires
-    everything cached for that product. Without that the app would keep citing a page that
-    has since changed.
+    Each product has subject matter experts, and they are the people who know when the bot
+    is wrong. So the ingestion side got its own UI rather than staying a set of scripts I
+    ran.
   </p>
   <p>
-    The key is an exact hash, so differently worded versions of the same question both
-    miss. Matching on meaning is the next step and I have not done it.
+    An SME can see everything the bot currently knows for their product as a tree, add a
+    page we missed, remove one that should not be in there, ask a test question against it,
+    and leave feedback in the same place. The cron lives on that page too: what ran last
+    night, how far it got, what changed, what failed, the logs.
+  </p>
+  <p>
+    Without this page every correction would have arrived as an email to our team, and we
+    would have been the bottleneck for content we do not understand as well as they do.
   </p>
 
-  <h2 id="retrievals">3 parallel retrievals</h2>
+  <h2 id="ask">Answering a question</h2>
   <p>
-    Plain chunk search handled most lookups but failed on two kinds of question: answers
-    spread across a whole document, and questions where you need to know a document exists
-    before you can find anything in it. So I ran three searches together, each strong where
-    the others are weak.
+    A small model reads the conversation first and decides whether the question is even
+    ours. If it is not, we say so. That check is cheap and it stops the expensive model
+    from having a go at something it has no business answering.
+  </p>
+  <p>
+    If it is in scope, the same step rewrites the question into one or more precise ones.
+    Agents ask things like "what about for the second one", and the rest of the pipeline
+    needs that turned back into a full question.
+  </p>
+
+  <figure>
+    <svg class="fig" viewBox="0 0 640 430" role="img"
+         aria-label="Answering a question. A small model checks scope and rewrites the question, then a thinking model with tools opens files, searches chunks or queries a sheet, looping until it has enough to answer.">
+      <defs>
+        <marker id="k3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
+        </marker>
+      </defs>
+
+      <rect class="b" x="200" y="8" width="240" height="42" rx="6"/>
+      <text class="t" x="320" y="28" text-anchor="middle">Sales agent asks</text>
+      <text class="s" x="320" y="43" text-anchor="middle">whole thread, latest question last</text>
+      <path class="ar" d="M320 50 L320 70" marker-end="url(#k3)"/>
+
+      <path class="ar" d="M170 98 L136 98" marker-end="url(#k3)"/>
+      <rect class="b" x="6" y="80" width="126" height="36" rx="6"/>
+      <text class="s" x="69" y="96" text-anchor="middle">out of scope,</text>
+      <text class="s" x="69" y="109" text-anchor="middle">declined politely</text>
+
+      <rect class="b-a" x="170" y="72" width="300" height="52" rx="6"/>
+      <text class="t" x="320" y="92" text-anchor="middle">Small model reads it</text>
+      <text class="s" x="320" y="110" text-anchor="middle">in scope? which product?</text>
+
+      <path class="ar" d="M320 124 L320 144" marker-end="url(#k3)"/>
+
+      <rect class="b" x="170" y="146" width="300" height="46" rx="6"/>
+      <text class="t" x="320" y="166" text-anchor="middle">Rewrites the question</text>
+      <text class="s" x="320" y="182" text-anchor="middle">into one or more precise ones</text>
+
+      <path class="ar" d="M320 192 L320 214" marker-end="url(#k3)"/>
+
+      <rect class="b-a" x="150" y="216" width="340" height="52" rx="6"/>
+      <text class="t" x="320" y="236" text-anchor="middle">Thinking model, with tools</text>
+      <text class="s" x="320" y="253" text-anchor="middle">decides what to open, then opens it</text>
+
+      <path class="ar" d="M320 268 L320 280"/>
+      <path class="ar" d="M110 280 L530 280"/>
+      <path class="ar" d="M110 280 L110 298" marker-end="url(#k3)"/>
+      <path class="ar" d="M320 280 L320 298" marker-end="url(#k3)"/>
+      <path class="ar" d="M530 280 L530 298" marker-end="url(#k3)"/>
+
+      <rect class="b" x="20"  y="300" width="180" height="46" rx="6"/>
+      <text class="t" x="110" y="320" text-anchor="middle">Open a file</text>
+      <text class="s" x="110" y="336" text-anchor="middle">read the whole thing</text>
+
+      <rect class="b" x="230" y="300" width="180" height="46" rx="6"/>
+      <text class="t" x="320" y="320" text-anchor="middle">Search chunks</text>
+      <text class="s" x="320" y="336" text-anchor="middle">when a lookup is enough</text>
+
+      <rect class="b" x="440" y="300" width="180" height="46" rx="6"/>
+      <text class="t" x="530" y="320" text-anchor="middle">Query a sheet</text>
+      <text class="s" x="530" y="336" text-anchor="middle">real query, every row</text>
+
+      <path class="ard" d="M620 323 L634 323 L634 242 L492 242" marker-end="url(#k3)"/>
+      <text class="l" x="630" y="234" text-anchor="end">not enough yet, go again</text>
+
+      <path class="ar" d="M110 346 L110 364"/>
+      <path class="ar" d="M320 346 L320 364"/>
+      <path class="ar" d="M530 346 L530 364"/>
+      <path class="ar" d="M110 364 L530 364"/>
+      <path class="ar" d="M320 364 L320 382" marker-end="url(#k3)"/>
+
+      <rect class="b" x="175" y="384" width="290" height="40" rx="6"/>
+      <text class="t" x="320" y="409" text-anchor="middle">Answer, with the source named</text>
+    </svg>
+    <figcaption>The model asks for what it wants rather than being handed everything up front. If what came back is not enough, it goes again.</figcaption>
+  </figure>
+
+  <h2 id="broke">Where the first version broke</h2>
+  <p>
+    The first version was ordinary retrieval. Embed the question, pull the top matching
+    chunks out of an Azure AI index, hand them to a model, get an answer. It worked for a
+    good share of questions and fell over on the rest in a way that took us a while to see
+    clearly.
   </p>
 
   <div class="tablewrap">
     <table>
-      <tr><th>Retrieval</th><th>Good at</th><th>Falls over on</th></tr>
+      <tr><th>Question</th><th>Why top k could not do it</th></tr>
       <tr>
-        <td><strong>A. Article routing</strong></td>
-        <td>Whole document questions, and "does this product do X at all"</td>
-        <td>Cost and speed, you pay for full files</td>
+        <td><strong>How many rows in this sheet match X</strong></td>
+        <td>Retrieval brings back the rows that look most like the question. It has no idea
+          whether it missed any, and neither do you.</td>
       </tr>
       <tr>
-        <td><strong>B. Chunk search</strong></td>
-        <td>Precise lookups where the answer is one paragraph. Cheap, fast</td>
-        <td>Answers split across sections, wording unlike the source</td>
+        <td><strong>Anything spanning two sheets</strong></td>
+        <td>The answer only exists once you put both together, so it is never sitting in
+          one chunk waiting to be found.</td>
       </tr>
       <tr>
-        <td><strong>C. OKF concepts</strong></td>
-        <td>Definitions and stable facts. Curated, so it is clean</td>
-        <td>Anything not yet written up as a concept</td>
+        <td><strong>Anything spread across a deck or a long doc</strong></td>
+        <td>A slide out of order loses the thing that made it mean something.</td>
+      </tr>
+      <tr>
+        <td><strong>Does this product do X at all</strong></td>
+        <td>Nothing written down looks identical to a bad search. Both come back empty.</td>
       </tr>
     </table>
   </div>
 
-  <h2 id="okf">OKF (Open Knowledge Format) retrieval</h2>
   <p>
-    <strong>OKF</strong> is an open specification Google Cloud published in June 2026,
-    currently v0.1. It standardises the pattern of keeping a curated wiki that an LLM reads.
+    The pattern underneath all of it is the same. Top k gives you the chunks that most
+    resemble the question. That is exactly right for "what does the policy say about X",
+    and exactly wrong for anything that has to see every row before it can answer.
   </p>
-  <ul>
-    <li>A bundle is a directory of markdown files, one per concept.</li>
-    <li>Structured fields sit in YAML frontmatter: <code>type</code>, <code>title</code>,
-      <code>description</code>, <code>resource</code>, <code>tags</code>,
-      <code>timestamp</code>.</li>
-    <li>Vendor neutral. No account, SDK or database needed to read or serve it.</li>
-  </ul>
+
+  <h2 id="okf">Files and tools instead of chunks</h2>
+  <p>
+    Two changes fixed most of this, and they are easy to confuse with each other, so it is
+    worth separating them.
+  </p>
+
+  <h4>1. How the knowledge is written down</h4>
+  <p>
+    We moved the curated side to <strong>OKF</strong>, the Open Knowledge Format, an open
+    spec Google Cloud published in June 2026 at v0.1. A bundle is a directory of markdown
+    files, one per concept, with a few structured fields in YAML frontmatter and ordinary
+    markdown links between files, so the bundle reads as a graph.
+  </p>
 
   <div class="diagram">
 <pre>
@@ -303,470 +431,151 @@ A formulary tier determines member cost share for a drug ...
   </div>
 
   <p>
-    Plain files are easy to work with. Grep them, diff them, keep them in git, fix a wrong
-    concept by hand in a pull request. The crawled corpus only says what the source pages
-    say, so the bundle is where we record what is correct.
+    Plain files are easy to live with. Grep them, diff them, keep them in git, fix a wrong
+    concept by hand in a pull request. The crawled corpus can only ever say what the source
+    pages say, so the bundle is where we write down what is actually correct.
+  </p>
+  <p>
+    Worth being precise about one thing, because I got it wrong in my own head for a while.
+    OKF does not retrieve anything. It is a format, not a retrieval system. It made the raw
+    material clean and consistent, which helps, but on its own it does not answer a
+    question.
   </p>
 
-  <h2 id="ingestion">Ingestion</h2>
+  <h4>2. How the content gets found</h4>
   <p>
-    Most of the retrieval quality comes down to ingestion. Each product is a tree of linked
-    articles with spreadsheets and decks attached, and crawling it naively loses that
-    structure.
+    The part that actually changed the answers was giving a thinking model tools and letting
+    it go and get things itself. Much like an assistant in an IDE, which does not embed your
+    whole repository and hope. It greps, opens a file, runs something, reads the result and
+    tries again.
+  </p>
+  <p>
+    So the model can list and open concept files, follow their links, run a chunk search
+    when a plain lookup is all that is needed, and query a spreadsheet. That last one
+    matters most. Sheets stay as sheets rather than being flattened into markdown. The model
+    writes a query, a real query engine runs it across every row, and the number that comes
+    back is the actual number. The model does the understanding, the query does the
+    counting. Those are two different jobs and they were going wrong together.
+  </p>
+  <p>
+    Chunk search did not go away. It stopped being the whole architecture and became one
+    tool among several.
+  </p>
+
+  <h4>What this costs, and what I did about it</h4>
+  <p>
+    An agentic loop is more model calls than a single retrieval pass, which shows up in both
+    latency and the bill. The thing that took the most out of that is prompt caching. The
+    stable part of the prompt sits at the front, the tool definitions, the system prompt and
+    the concept index, and the question goes at the end. A cached read is far cheaper than a
+    fresh input token and the first token comes back sooner.
+  </p>
+  <p>
+    It has sharp edges. A cache write costs more than a normal token, so it only pays if the
+    prefix gets reused before it expires. The window is short. Matching is on the exact
+    prefix, so reordering anything near the front throws away the rest. Keeping that prefix
+    genuinely stable is the whole trick, and it is a real constraint on how you assemble
+    prompts.
+  </p>
+
+  <h2 id="evals">Picking a model with feedback</h2>
+  <p>
+    We could not settle which model to use by arguing about it. Every answer carries a
+    rating and a comment box, so I built a small framework around that. Run one model for a
+    window, watch the feedback along with latency and cost, then switch and watch the same
+    thing again.
+  </p>
+  <p>
+    The useful side effect is that going back is normal. If a swap makes things worse we
+    return to the previous setting the same way we moved off it, rather than treating it as
+    an incident.
+  </p>
+
+  <h2 id="knobs">Everything as a knob</h2>
+  <p>
+    This is what we are building now, and it is the part I am most interested in. The same
+    idea, but the model is not the only thing you can turn.
   </p>
 
   <figure>
-    <svg class="fig" viewBox="0 0 640 396" role="img"
-         aria-label="Ingestion pipeline from a seed link file through the crawler into a knowledge base directory and three derived artifacts.">
+    <svg class="fig" viewBox="0 0 640 272" role="img"
+         aria-label="The evaluation loop. Knobs are set, the setting runs for a window, quality latency and cost are measured, then the setting is kept or rolled back.">
       <defs>
-        <marker id="h2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <marker id="k4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
           <path class="hd" d="M0 0 L8 4 L0 8 z"/>
         </marker>
       </defs>
 
-      <!-- cron -->
-      <rect class="b" x="15" y="10" width="132" height="38" rx="6"/>
-      <text class="t" x="81" y="27" text-anchor="middle">Cron</text>
-      <text class="s" x="81" y="41" text-anchor="middle">re crawl, detect changes</text>
-      <path class="ar" d="M147 29 L222 29" marker-end="url(#h2)"/>
+      <text class="l" x="0" y="14">One turn of the loop</text>
 
-      <!-- seed json -->
-      <rect class="b" x="224" y="10" width="196" height="38" rx="6"/>
-      <text class="m" x="322" y="27" text-anchor="middle">products.json</text>
-      <text class="s" x="322" y="41" text-anchor="middle">product to seed article links</text>
-      <path class="ar" d="M322 48 L322 72" marker-end="url(#h2)"/>
+      <rect class="b-a" x="15" y="100" width="180" height="92" rx="6"/>
+      <text class="t" x="105" y="124" text-anchor="middle">Knobs</text>
+      <text class="s" x="105" y="142" text-anchor="middle">which model, retrieval,</text>
+      <text class="s" x="105" y="156" text-anchor="middle">ranking, where it runs</text>
+      <text class="s" x="105" y="176" text-anchor="middle">set, not rewritten</text>
+      <path class="ar" d="M195 146 L245 146" marker-end="url(#k4)"/>
 
-      <!-- crawler -->
-      <rect class="b-a" x="222" y="74" width="200" height="40" rx="6"/>
-      <text class="t" x="322" y="99" text-anchor="middle">Crawler, to depth k</text>
+      <rect class="b" x="247" y="110" width="170" height="72" rx="6"/>
+      <text class="t" x="332" y="134" text-anchor="middle">Run it for a window</text>
+      <text class="s" x="332" y="152" text-anchor="middle">same questions,</text>
+      <text class="s" x="332" y="166" text-anchor="middle">real agents</text>
+      <path class="ar" d="M417 146 L467 146" marker-end="url(#k4)"/>
 
-      <!-- fan out -->
-      <path class="ar" d="M322 114 L322 132"/>
-      <path class="ar" d="M105 132 L535 132"/>
-      <path class="ar" d="M105 132 L105 152" marker-end="url(#h2)"/>
-      <path class="ar" d="M322 132 L322 152" marker-end="url(#h2)"/>
-      <path class="ar" d="M535 132 L535 152" marker-end="url(#h2)"/>
+      <rect class="b" x="469" y="96" width="166" height="100" rx="6"/>
+      <text class="t" x="552" y="120" text-anchor="middle">Watch</text>
+      <text class="s" x="552" y="140" text-anchor="middle">thumbs and comments,</text>
+      <text class="s" x="552" y="156" text-anchor="middle">p95 latency,</text>
+      <text class="s" x="552" y="172" text-anchor="middle">cost per answer</text>
 
-      <rect class="b" x="15"  y="154" width="180" height="56" rx="6"/>
-      <text class="t" x="105" y="174" text-anchor="middle">Page content</text>
-      <text class="s" x="105" y="192" text-anchor="middle">extracted to .md</text>
-
-      <rect class="b" x="232" y="154" width="180" height="56" rx="6"/>
-      <text class="t" x="322" y="174" text-anchor="middle">Attachments</text>
-      <text class="s" x="322" y="190" text-anchor="middle">xlsx docx pdf ppt,</text>
-      <text class="s" x="322" y="203" text-anchor="middle">a parser each, to .md</text>
-
-      <rect class="b" x="445" y="154" width="180" height="56" rx="6"/>
-      <text class="t" x="535" y="174" text-anchor="middle">Sub links</text>
-      <text class="s" x="535" y="192" text-anchor="middle">recurse to depth k</text>
-      <path class="ard" d="M625 182 L634 182 L634 94 L422 94" marker-end="url(#h2)"/>
-
-      <!-- converge to kb -->
-      <path class="ar" d="M105 210 L105 228"/>
-      <path class="ar" d="M322 210 L322 228"/>
-      <path class="ar" d="M105 228 L322 228"/>
-      <path class="ar" d="M322 228 L322 248" marker-end="url(#h2)"/>
-
-      <rect class="b" x="212" y="250" width="220" height="42" rx="6"/>
-      <text class="m" x="322" y="269" text-anchor="middle">knowledge_base/</text>
-      <text class="s" x="322" y="284" text-anchor="middle">folders mirror the link tree</text>
-
-      <!-- derived -->
-      <path class="ar" d="M322 292 L322 308"/>
-      <path class="ar" d="M105 308 L535 308"/>
-      <path class="ar" d="M105 308 L105 328" marker-end="url(#h2)"/>
-      <path class="ar" d="M322 308 L322 328" marker-end="url(#h2)"/>
-      <path class="ar" d="M535 308 L535 328" marker-end="url(#h2)"/>
-
-      <rect class="b" x="15"  y="330" width="180" height="58" rx="6"/>
-      <text class="t" x="105" y="349" text-anchor="middle">index.json, per level</text>
-      <text class="s" x="105" y="365" text-anchor="middle">summary, keywords, topics,</text>
-      <text class="s" x="105" y="378" text-anchor="middle">concepts, links, timestamp</text>
-
-      <rect class="b" x="232" y="330" width="180" height="58" rx="6"/>
-      <text class="t" x="322" y="349" text-anchor="middle">Chunks</text>
-      <text class="s" x="322" y="365" text-anchor="middle">rich metadata, indexed</text>
-      <text class="s" x="322" y="378" text-anchor="middle">into Azure AI Search</text>
-
-      <rect class="b" x="445" y="330" width="180" height="58" rx="6"/>
-      <text class="m" x="535" y="349" text-anchor="middle">okf/</text>
-      <text class="s" x="535" y="365" text-anchor="middle">curated concepts,</text>
-      <text class="s" x="535" y="378" text-anchor="middle">written by hand</text>
+      <path class="ard" d="M552 196 L552 240 L105 240 L105 194" marker-end="url(#k4)"/>
+      <text class="l" x="328" y="256" text-anchor="middle">keep it, or go back to the last setting</text>
     </svg>
-    <figcaption>Each of the three artifacts at the bottom feeds one of the three retrievals.</figcaption>
+    <figcaption>Going back is the same move as going forward. That is the whole point of the shape.</figcaption>
   </figure>
 
-  <h4>Two decisions</h4>
+  <p>
+    The knobs are the model, the retrieval approach, the ranking, and where the thing runs,
+    including moving off OpenShift to a cloud or back on premises. Set them, feed in real
+    feedback over a period, watch quality and latency and cost, then keep the setting or
+    drop back to the last one.
+  </p>
+  <p>
+    The reason to build it properly rather than keep it as our own scripts is that this
+    field moves faster than any one team can follow. Something better lands every few
+    months. If moving to it is a setting rather than a rewrite, every application can pick
+    it up quickly instead of one team at a time.
+  </p>
+
+  <h2 id="running">Running it</h2>
+  <p>
+    Sign in is Okta. The app runs on OpenShift. Model calls go through our internal AICoE
+    gateway. Conversations and feedback sit in Postgres, chunks in Azure AI Search.
+  </p>
+  <p>
+    My side of it was sizing the pods, the rate limiting at the gateway so bursts stay
+    inside the model quota, the caching, and the dashboards. Two sets of those, because the
+    application and the ingestion fail in completely different ways. An app failure is loud.
+    An ingestion failure is silent, and you find out weeks later when a question that should
+    have been easy cannot be answered.
+  </p>
+
+  <h2 id="learned">What I took away</h2>
   <ul>
     <li>
-      <strong>Everything converts to markdown first.</strong> One intermediate format means
-      one set of chunking rules, and a re crawl you can read as a diff.
+      Parsing sets the ceiling. No amount of retrieval work recovers content that a parser
+      quietly dropped on the way in.
     </li>
     <li>
-      <strong>Each file type gets its own parser.</strong> A spreadsheet carries meaning in
-      its sheets and columns, a deck in slide order. Generic extraction drops that, and you
-      find out later when an easy question cannot be answered.
-    </li>
-  </ul>
-
-  <h2 id="regression">Regression testing</h2>
-  <p>
-    I was given access to the sales agent mailbox. A few months of real client questions,
-    each already paired with the answer an agent had sent back.
-  </p>
-
-  <figure>
-    <svg class="fig" viewBox="0 0 640 430" role="img"
-         aria-label="Regression test bed. Mail threads become question and answer pairs, the question goes through the app, and a judge model compares the app answer against the agent answer.">
-      <defs>
-        <marker id="h5" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
-        </marker>
-      </defs>
-
-      <rect class="b" x="200" y="8" width="240" height="46" rx="6"/>
-      <text class="t" x="320" y="28" text-anchor="middle">Sales agent mailbox</text>
-      <text class="s" x="320" y="44" text-anchor="middle">a few months of real threads</text>
-      <path class="ar" d="M320 54 L320 74" marker-end="url(#h5)"/>
-
-      <rect class="b" x="200" y="76" width="240" height="46" rx="6"/>
-      <text class="t" x="320" y="96" text-anchor="middle">LLM extracts pairs</text>
-      <text class="s" x="320" y="112" text-anchor="middle">question asked, answer the agent sent</text>
-      <path class="ar" d="M320 122 L320 142" marker-end="url(#h5)"/>
-
-      <rect class="b-a" x="200" y="144" width="240" height="46" rx="6"/>
-      <text class="t" x="320" y="164" text-anchor="middle">Golden set</text>
-      <text class="s" x="320" y="180" text-anchor="middle">question plus ground truth answer</text>
-
-      <!-- split: question one way, ground truth the other -->
-      <path class="ar" d="M320 190 L320 206"/>
-      <path class="ar" d="M130 206 L510 206"/>
-      <path class="ar" d="M130 206 L130 226" marker-end="url(#h5)"/>
-      <path class="ar" d="M510 206 L510 226" marker-end="url(#h5)"/>
-      <text class="l" x="136" y="202">question</text>
-      <text class="l" x="504" y="202" text-anchor="end">ground truth</text>
-
-      <rect class="b" x="40" y="228" width="180" height="46" rx="6"/>
-      <text class="t" x="130" y="248" text-anchor="middle">The app</text>
-      <text class="s" x="130" y="264" text-anchor="middle">full pipeline, untouched</text>
-
-      <rect class="b" x="420" y="228" width="180" height="46" rx="6"/>
-      <text class="t" x="510" y="248" text-anchor="middle">Held aside</text>
-      <text class="s" x="510" y="264" text-anchor="middle">not shown to the app</text>
-
-      <path class="ar" d="M130 274 L130 298 L240 298 L240 312" marker-end="url(#h5)"/>
-      <path class="ar" d="M510 274 L510 298 L400 298 L400 312" marker-end="url(#h5)"/>
-
-      <rect class="b-a" x="180" y="314" width="280" height="50" rx="6"/>
-      <text class="t" x="320" y="334" text-anchor="middle">Judge model</text>
-      <text class="s" x="320" y="351" text-anchor="middle">scores the app answer against ground truth</text>
-
-      <path class="ar" d="M320 364 L320 378"/>
-      <path class="ar" d="M175 378 L465 378"/>
-      <path class="ar" d="M175 378 L175 396" marker-end="url(#h5)"/>
-      <path class="ar" d="M465 378 L465 396" marker-end="url(#h5)"/>
-
-      <rect class="b" x="60" y="398" width="230" height="30" rx="6"/>
-      <text class="t" x="175" y="418" text-anchor="middle">Accuracy</text>
-
-      <rect class="b" x="350" y="398" width="230" height="30" rx="6"/>
-      <text class="t" x="465" y="418" text-anchor="middle">Gap analysis</text>
-    </svg>
-    <figcaption>The app never sees the agent's answer.</figcaption>
-  </figure>
-
-  <p>
-    Accuracy tells me whether a change helped. The gap analysis has been more useful day to
-    day, since it shows what the corpus cannot answer at all: a section never crawled, a
-    parser dropping content, a concept nobody wrote up.
-  </p>
-
-  <h4>A caveat on the ground truth</h4>
-  <p>
-    The ground truth is whatever an agent wrote at the time, usually in a hurry. When the
-    judge disagrees, sometimes the agent was wrong. A low score is something to go and
-    check.
-  </p>
-
-  <h2 id="consistency">Keeping the judge consistent</h2>
-  <p>
-    The first judge was not repeatable. Same set twice, two different accuracy numbers,
-    which makes the harness useless. Getting it stable took longer than building the rest
-    of the test bed.
-  </p>
-
-  <figure>
-    <svg class="fig" viewBox="0 0 640 438" role="img"
-         aria-label="Judging one pair. A content hash checks the cache first, then scoring and gap description run as separate calls, with a majority vote only for borderline pairs.">
-      <defs>
-        <marker id="h6" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
-        </marker>
-      </defs>
-
-      <rect class="b" x="210" y="8" width="220" height="38" rx="6"/>
-      <text class="t" x="320" y="32" text-anchor="middle">One question and answer pair</text>
-      <path class="ar" d="M320 46 L320 64" marker-end="url(#h6)"/>
-
-      <rect class="b-a" x="140" y="66" width="360" height="50" rx="6"/>
-      <text class="t" x="320" y="86" text-anchor="middle">Cache key</text>
-      <text class="m" x="320" y="103" text-anchor="middle">hash(question, both answers, prompt ver, model ver)</text>
-      <path class="ar" d="M320 116 L320 134" marker-end="url(#h6)"/>
-
-      <rect class="b" x="252" y="136" width="136" height="32" rx="6"/>
-      <text class="t" x="320" y="157" text-anchor="middle">in cache?</text>
-
-      <path class="ar" d="M388 152 L438 152" marker-end="url(#h6)"/>
-      <text class="l" x="396" y="146">yes</text>
-      <rect class="b" x="440" y="134" width="190" height="36" rx="6"/>
-      <text class="s" x="535" y="149" text-anchor="middle">return stored verdict,</text>
-      <text class="s" x="535" y="163" text-anchor="middle">no model call</text>
-
-      <path class="ar" d="M320 168 L320 194" marker-end="url(#h6)"/>
-      <text class="l" x="328" y="186">no</text>
-
-      <rect class="b" x="170" y="196" width="300" height="46" rx="6"/>
-      <text class="t" x="320" y="216" text-anchor="middle">Step 1, score it</text>
-      <text class="s" x="320" y="232" text-anchor="middle">fixed schema, the verdict is an enum</text>
-      <path class="ar" d="M320 242 L320 260" marker-end="url(#h6)"/>
-
-      <rect class="b" x="170" y="262" width="300" height="46" rx="6"/>
-      <text class="t" x="320" y="282" text-anchor="middle">Step 2, describe the gap</text>
-      <text class="s" x="320" y="298" text-anchor="middle">separate call, free text only here</text>
-      <path class="ar" d="M320 308 L320 328" marker-end="url(#h6)"/>
-
-      <rect class="b" x="252" y="330" width="136" height="32" rx="6"/>
-      <text class="t" x="320" y="351" text-anchor="middle">borderline?</text>
-
-      <path class="ar" d="M388 346 L438 346" marker-end="url(#h6)"/>
-      <text class="l" x="396" y="340">yes</text>
-      <rect class="b" x="440" y="326" width="190" height="40" rx="6"/>
-      <text class="s" x="535" y="342" text-anchor="middle">sample 3 times,</text>
-      <text class="s" x="535" y="356" text-anchor="middle">take the majority</text>
-      <path class="ar" d="M535 366 L535 400 L442 400" marker-end="url(#h6)"/>
-
-      <path class="ar" d="M320 362 L320 382" marker-end="url(#h6)"/>
-      <text class="l" x="328" y="376">no</text>
-
-      <rect class="b" x="200" y="384" width="240" height="36" rx="6"/>
-      <text class="t" x="320" y="407" text-anchor="middle">Store, then return</text>
-    </svg>
-    <figcaption>Most runs never reach the model, since nothing about the inputs changed.</figcaption>
-  </figure>
-
-  <h4>What helped, roughly in order</h4>
-  <ul>
-    <li>
-      <strong>Cache on a content hash.</strong> The key covers the question, both answers,
-      the prompt version and the model version. Nothing changed means the stored verdict
-      comes back. This is what actually makes a rerun match.
+      Letting the model say it does not have enough was worth more than any amount of
+      prompt tuning. Without that option it just answers anyway.
     </li>
     <li>
-      <strong>One pair per call.</strong> I had been batching several into one prompt.
-      Reasoning leaks between them, so identical pairs score differently depending on their
-      neighbours.
+      Handing the experts their own page did more for accuracy than any model swap did.
     </li>
     <li>
-      <strong>Split scoring from explaining.</strong> Asking for both together let the
-      explanation drag the score around.
+      Retrieval and calculation are different jobs. Once I stopped asking one system to do
+      both, a whole category of wrong answers went away.
     </li>
-    <li>
-      <strong>Fixed output schema.</strong> The verdict is an enum. Much of the apparent
-      inconsistency was wording drift in something that should have been one of four values.
-    </li>
-    <li>
-      <strong>Majority vote only where it pays.</strong> Three samples for pairs the judge
-      marks borderline. Doing it everywhere triples the cost with no gain on clear cases.
-    </li>
-    <li>
-      <strong>Judge prompts are versioned like code</strong>, with a small hand scored set
-      run against any change.
-    </li>
-  </ul>
-
-  <p>
-    Temperature is zero throughout, which helps but does not settle it. Most of the
-    remaining drift came from batching and from scoring in free text.
-  </p>
-
-  <h2 id="admin">Admin pages</h2>
-  <p>
-    Failures here are usually silent, so I built admin pages to show what state things are
-    in.
-  </p>
-
-  <div class="tablewrap">
-    <table>
-      <tr><th>Page</th><th>What it is for</th></tr>
-      <tr>
-        <td><strong>Feedback review</strong></td>
-        <td>Shows each comment along with the conversation it came from, so you can see
-          what actually went wrong instead of just a rating.</td>
-      </tr>
-      <tr>
-        <td><strong>Ingested content</strong></td>
-        <td>What has been crawled and when, with a tree view for the folder layout and a
-          graph view for how articles link to each other. Missed and orphaned branches
-          show up in the graph view.</td>
-      </tr>
-      <tr>
-        <td><strong>Test bench</strong></td>
-        <td>Runs a question against a chosen part of the corpus and shows what each
-          retrieval returned, without going through the chat UI.</td>
-      </tr>
-      <tr>
-        <td><strong>Analytics</strong></td>
-        <td>Conversation counts, active users, feedback volume, and the same figures
-          plotted over time.</td>
-      </tr>
-    </table>
-  </div>
-
-  <p>
-    Each page has its own permission rather than one admin flag. The feedback page shows
-    real client questions, so it needed tighter access than analytics.
-  </p>
-
-  <h2 id="deployment">Deployment</h2>
-  <p>
-    Two setups. The first runs today for internal testing, roughly 20 users with 10 active
-    at once. The second is where it goes as usage grows. Model calls in both go through
-    Evernorth's internal AICoE gateway.
-  </p>
-
-  <figure>
-    <svg class="fig" viewBox="0 0 640 250" role="img"
-         aria-label="POC deployment, a single OpenShift pod holding the UI and the API, talking to Azure AI Search, PostgreSQL, and the AICoE gateway for model calls.">
-      <defs>
-        <marker id="h3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
-        </marker>
-      </defs>
-
-      <text class="l" x="0" y="12">POC shape</text>
-
-      <rect class="b" x="0" y="94" width="112" height="46" rx="6"/>
-      <text class="t" x="56" y="113" text-anchor="middle">~20 users</text>
-      <text class="s" x="56" y="128" text-anchor="middle">~10 at a time</text>
-      <path class="ar" d="M112 117 L162 117" marker-end="url(#h3)"/>
-
-      <rect class="b-d" x="164" y="34" width="216" height="150" rx="8"/>
-      <text class="l" x="272" y="52" text-anchor="middle">1 OpenShift pod</text>
-      <text class="m" x="272" y="66" text-anchor="middle">2 vCPU / 4 GiB, est.</text>
-      <rect class="b" x="184" y="76" width="176" height="36" rx="5"/>
-      <text class="t" x="272" y="99" text-anchor="middle">UI</text>
-      <rect class="b" x="184" y="120" width="176" height="36" rx="5"/>
-      <text class="t" x="272" y="143" text-anchor="middle">FastAPI</text>
-      <text class="s" x="272" y="170" text-anchor="middle">shared, request and limit set equal</text>
-
-      <path class="ar" d="M380 94 L446 60" marker-end="url(#h3)"/>
-      <path class="ar" d="M380 138 L446 140" marker-end="url(#h3)"/>
-      <path class="ar" d="M380 138 L446 214" marker-end="url(#h3)"/>
-
-      <rect class="b" x="448" y="36" width="190" height="42" rx="6"/>
-      <text class="t" x="543" y="54" text-anchor="middle">Azure AI Search</text>
-      <text class="s" x="543" y="69" text-anchor="middle">called as an API</text>
-
-      <rect class="b" x="448" y="118" width="190" height="56" rx="6"/>
-      <text class="t" x="543" y="137" text-anchor="middle">PostgreSQL</text>
-      <text class="s" x="543" y="153" text-anchor="middle">conversations, feedback,</text>
-      <text class="s" x="543" y="166" text-anchor="middle">ingestion timestamps</text>
-
-      <rect class="b-a" x="448" y="192" width="190" height="46" rx="6"/>
-      <text class="t" x="543" y="211" text-anchor="middle">AICoE gateway</text>
-      <text class="s" x="543" y="227" text-anchor="middle">internal, classifier and thinking calls</text>
-    </svg>
-    <figcaption>CPU and RAM are a starting estimate, I have not load tested this pod.</figcaption>
-  </figure>
-
-  <figure>
-    <svg class="fig" viewBox="0 0 640 322" role="img"
-         aria-label="Production deployment sized for about 8000 daily active users, with a load balancer, an API gateway holding the rate limiter, six pods, and the backing services.">
-      <defs>
-        <marker id="h4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-          <path class="hd" d="M0 0 L8 4 L0 8 z"/>
-        </marker>
-      </defs>
-
-      <text class="l" x="0" y="12">Production shape</text>
-
-      <rect class="b" x="0" y="20" width="126" height="58" rx="6"/>
-      <text class="t" x="63" y="39" text-anchor="middle">9k users</text>
-      <text class="s" x="63" y="55" text-anchor="middle">~8k daily active</text>
-      <text class="s" x="63" y="69" text-anchor="middle">~32k questions/day</text>
-      <path class="ar" d="M126 49 L154 49" marker-end="url(#h4)"/>
-
-      <rect class="b" x="156" y="20" width="118" height="58" rx="6"/>
-      <text class="t" x="215" y="45" text-anchor="middle">ALB</text>
-      <text class="s" x="215" y="62" text-anchor="middle">~3 req/s peak</text>
-      <path class="ar" d="M274 49 L302 49" marker-end="url(#h4)"/>
-
-      <rect class="b-a" x="304" y="20" width="196" height="58" rx="6"/>
-      <text class="t" x="402" y="39" text-anchor="middle">API gateway</text>
-      <text class="s" x="402" y="55" text-anchor="middle">auth, quotas,</text>
-      <text class="s" x="402" y="69" text-anchor="middle">token bucket limiter</text>
-
-      <path class="ar" d="M402 78 L402 106" marker-end="url(#h4)"/>
-
-      <rect class="b-d" x="200" y="108" width="390" height="78" rx="8"/>
-      <text class="l" x="395" y="126" text-anchor="middle">OpenShift, 6 pods, HPA 4 to 12</text>
-      <text class="s" x="395" y="141" text-anchor="middle">2 vCPU / 4 GiB each</text>
-      <rect class="b" x="220" y="148" width="110" height="30" rx="5"/>
-      <text class="s" x="275" y="168" text-anchor="middle">UI + API</text>
-      <rect class="b" x="340" y="148" width="110" height="30" rx="5"/>
-      <text class="s" x="395" y="168" text-anchor="middle">UI + API</text>
-      <rect class="b" x="460" y="148" width="110" height="30" rx="5"/>
-      <text class="s" x="515" y="168" text-anchor="middle">UI + API</text>
-
-      <path class="ar" d="M395 186 L395 208"/>
-      <path class="ar" d="M105 208 L535 208"/>
-      <path class="ar" d="M105 208 L105 230" marker-end="url(#h4)"/>
-      <path class="ar" d="M320 208 L320 230" marker-end="url(#h4)"/>
-      <path class="ar" d="M535 208 L535 230" marker-end="url(#h4)"/>
-
-      <rect class="b" x="15"  y="232" width="180" height="74" rx="6"/>
-      <text class="t" x="105" y="252" text-anchor="middle">Azure AI Search</text>
-      <text class="s" x="105" y="269" text-anchor="middle">S1, 2 replicas</text>
-      <text class="s" x="105" y="284" text-anchor="middle">~2 queries/s peak</text>
-
-      <rect class="b" x="230" y="232" width="180" height="74" rx="6"/>
-      <text class="t" x="320" y="252" text-anchor="middle">PostgreSQL</text>
-      <text class="s" x="320" y="269" text-anchor="middle">4 vCPU / 16 GiB, 500 GB</text>
-      <text class="s" x="320" y="284" text-anchor="middle">read replica for analytics</text>
-
-      <rect class="b-a" x="445" y="232" width="180" height="74" rx="6"/>
-      <text class="t" x="535" y="252" text-anchor="middle">AICoE gateway</text>
-      <text class="s" x="535" y="269" text-anchor="middle">~5 model calls/s</text>
-      <text class="s" x="535" y="284" text-anchor="middle">~3.5M tokens/min peak</text>
-    </svg>
-    <figcaption>Sized for the target of ~8k daily active users. These are calculated figures, not measured ones.</figcaption>
-  </figure>
-
-  <h4>Where the load comes from</h4>
-  <p>
-    One question is not one call, so the numbers above come from the fan out rather than
-    from traffic at the front door. 8k daily active agents asking about 4 questions each is
-    ~32k a day, which lands in an 8 hour window at roughly 1 req/s average and 3 at peak.
-    The answer cache absorbs a bit over half, so ~1.5 req/s reach the pipeline. Each of
-    those is a classifier call, a routing call and a thinking pass that can retry, so about
-    5 model calls a second.
-  </p>
-  <p>
-    The pods are the easy part. At ~18s per uncached answer that is under 30 concurrent
-    requests, which two pods would carry, so 6 is really about headroom and restarts. The
-    number that actually constrains this is the token rate, around 3.5M a minute at peak.
-    That is a quota to agree with the AICoE team before launch, and it is the reason the
-    cache and the cheaper classifier model matter more than pod count.
-  </p>
-
-  <h2 id="learned">What I learned</h2>
-  <ul>
-    <li>I spent longer than expected trying to get consistent output through prompting.
-      Caching on the inputs is what fixed it.</li>
-    <li>The agent replies I used as ground truth were written quickly and are not always
-      right, so I treat the score as something to check.</li>
-    <li>Letting the model say it does not have enough information mattered more than I
-      expected. Without that option it just answers anyway.</li>
   </ul>
 
   <hr>
