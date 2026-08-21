@@ -1,10 +1,11 @@
 \documentclass[a4paper,9pt]{article}
 
 \usepackage{parskip}
+\setlength{\parskip}{3pt}
 \RequirePackage{color}
 \RequirePackage{graphicx}
 \usepackage[usenames,dvipsnames]{xcolor}
-\usepackage[scale=0.92, top=.34in, bottom=.34in, left=.45in, right=.45in]{geometry}
+\usepackage[scale=0.92, top=.32in, bottom=.32in, left=.42in, right=.42in]{geometry}
 
 \usepackage{tabularx}
 \usepackage{enumitem}
@@ -22,7 +23,7 @@
 }
 
 \titleformat{\section}{\normalsize\scshape\raggedright}{}{0em}{}[\vspace{-4pt}\titlerule]
-\titlespacing{\section}{0pt}{6pt}{4pt}
+\titlespacing{\section}{0pt}{5pt}{3pt}
 
 \newenvironment{rItems}{
   \begin{itemize}[nosep, after=\strut, leftmargin=1.2em, itemsep=2pt, topsep=2pt]
@@ -78,14 +79,14 @@ I take problems end to end: system design, proof of concept, UI, backend, cloud 
 
 \role{Evernorth Health Services}{(Cigna Group), Hyderabad}{\textbf{Software Engineer, AI and Cloud}\more{https://rishavraj.info/projects/knowledge-assistant.html}}{Mar 2025 to Present}
 \begin{rItems}
-  \item \textbf{The app.} A chat app that answers product questions for sales agents, sourced from our Salesforce knowledge base. Built from scratch with the team, one piece of a larger product programme. I did the system design, the UI and the backend services.
+  \item \textbf{The app.} A chat app that answers product questions for sales agents, sourced from our Salesforce knowledge base. Built from scratch with the team. I did the system design, the UI and the backend services.
   \item \textbf{Ingestion.} A Playwright crawler signs in with its own role and walks seed articles to sub links at depth k. A parser per attachment type for xlsx, docx, pdf and pptx, then a small model normalises everything to markdown. Cron re crawls nightly, a content hash decides what is re parsed, and product experts curate it all from their own UI.\more{https://rishavraj.info/projects/knowledge-assistant.html\#ingestion}
   \item \textbf{Retrieval.} Started on top k chunks from an Azure AI index. Moved the curated side to OKF and gave a thinking model tools, so it opens what it wants and queries spreadsheets as real tables rather than chunking them. Fixed a whole class of aggregate and cross sheet questions.\more{https://rishavraj.info/projects/knowledge-assistant.html\#okf}
   \item \textbf{Model evaluation.} A framework that runs one setting for a window and scores it on user feedback, latency and cost, so a switch and a rollback are the same move. Now extending it so retrieval, ranking and where it runs are knobs too.\more{https://rishavraj.info/projects/knowledge-assistant.html\#evals}
   \item \textbf{Production.} Okta, OpenShift, PostgreSQL, model calls through the internal AICoE gateway. Token bucket at the gateway, prompt caching on the stable prefix to hold latency and cost down, and separate dashboards for the app and for ingestion.\more{https://rishavraj.info/projects/knowledge-assistant.html\#running}
 \end{rItems}
 
-\vspace{4pt}
+\vspace{3pt}
 
 \role{Flexday AI}{Hyderabad}{\textbf{Software Developer, AI and Cloud}\more{https://rishavraj.info/projects/rbac.html}}{Feb 2024 to Feb 2025}
 \begin{rItems}
@@ -94,7 +95,7 @@ I take problems end to end: system design, proof of concept, UI, backend, cloud 
   \item \textbf{Tropicana chatbot.} \href{https://www.tropicanabrandsgroup.com/contactus/}{Customer facing}, GPT-4 and Elasticsearch, on AWS and the client's own servers. Cleared their security review, firewall rules and VPN setup first.
 \end{rItems}
 
-\vspace{4pt}
+\vspace{3pt}
 
 % TODO Rishav: confirm your exact title, the city, and the month range.
 \role{Fastail}{Hyderabad}{\textbf{Software Engineer}\more{https://rishavraj.info/projects/fastail.html}}{2023 to 2024}
@@ -123,9 +124,9 @@ I take problems end to end: system design, proof of concept, UI, backend, cloud 
 % ══════════════════════════════════════════════════════════════════════════════
 \section{Skills}
 \color[HTML]{1C033C}\small
-\textbf{Search and AI:} RAG pipelines end to end, crawling and parsing a corpus, chunking, hybrid and graph search, re ranking, evals and LLM as judge, guardrails, Azure AI Search, Weaviate, OpenAI, Claude, Gemini\\[1pt]
-\textbf{Backend:} Python, FastAPI, Node.js, Express, TypeScript, MongoDB, PostgreSQL, Redis, Elasticsearch\\[1pt]
-\textbf{Infrastructure:} AWS (Lambda, ECS Fargate, EC2, S3, API Gateway, SQS, ElastiCache, CloudFront, Secrets Manager), OpenShift, Terraform, Docker, SAM, GitHub Actions, Auth0, Okta\\[1pt]
+\textbf{Search and AI:} RAG pipelines end to end, crawling and parsing a corpus, chunking, hybrid and graph search, re ranking, evals and LLM as judge, guardrails, Azure AI Search, Weaviate, OpenAI, Claude, Gemini\\
+\textbf{Backend:} Python, FastAPI, Node.js, Express, TypeScript, MongoDB, PostgreSQL, Redis, Elasticsearch\\
+\textbf{Infrastructure:} AWS (Lambda, ECS Fargate, EC2, S3, API Gateway, SQS, ElastiCache, CloudFront, Secrets Manager), OpenShift, Terraform, Docker, SAM, GitHub Actions, Auth0, Okta\\
 \textbf{System design:} rate limiting (token bucket, sliding window), caching and invalidation, idempotency, queues for load levelling, sharding and replication, consistency trade offs, multi tenant isolation, RED metrics
 
 % ══════════════════════════════════════════════════════════════════════════════
