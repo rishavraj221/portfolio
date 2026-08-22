@@ -828,7 +828,7 @@
   <section id="lenses">
     <p class="eyebrow"><b>IV.</b> &nbsp;What you get</p>
     <div class="col">
-      <h2>Seven lenses, and the honesty to leave one blank.</h2>
+      <h2>Nine lenses, and the honesty to leave one blank.</h2>
       <p>
         Not every lens applies to every service, and none of them are offered when the data behind them
         does not exist.
@@ -843,7 +843,22 @@
       <div class="lens"><dt>Reliability</dt><dd>Compounding failure across dependencies. Drag the fan-out slider and watch end-to-end success collapse.</dd></div>
       <div class="lens"><dt>Deployment</dt><dd>What is actually running and what it actually costs — provisioned against observed, from a read-only cloud session you already have.</dd></div>
       <div class="lens"><dt>Optimise</dt><dd>Ranked improvements: cost of inaction, gain, effort, mechanism. Each copyable as a task for your agent.</dd></div>
+      <div class="lens"><dt>AI pipelines</dt><dd>For services that call a model: the ingestion and per-request pipelines drawn stage by stage, with the stages that repeat <em>per sub-question</em> stacked and bracketed — which is where the cost actually multiplies, and which a topology diagram cannot show.</dd></div>
+      <div class="lens"><dt>Bench</dt><dd>What a researched practice would be worth on <em>this</em> service: what it costs today, what it becomes, and what adopting it costs. Blank unless the practice pack has an entry that genuinely applies.</dd></div>
     </dl>
+
+    <div class="col" style="margin-top: 40px;">
+      <p class="small">
+        The last two exist because a model-using service is where generic advice does the most damage.
+        A recommendation may only cite an entry from a curated pack of techniques that were researched and
+        implemented by hand before they were written down — never something the model recalled — and both
+        ends of every recommendation have to resolve to something real: a stage that exists in that
+        service, and a current entry that exists in the pack. <code>verify</code> checks both across files,
+        so a plausible-sounding invented technique fails the build rather than reading like a real one.
+        Where a technique could change what the model outputs, the recommendation is required to name the
+        comparison you would have to run before shipping it.
+      </p>
+    </div>
 
     <div class="col" style="margin-top: 40px;">
       <p class="small">
@@ -950,6 +965,14 @@
           The cost and rate-limit lenses aren't portable yet, so they are not offered rather than showing
           someone else's numbers. The MCP server is under consideration rather than planned. The desktop
           app is an Electron shell still being finished. All three are absent on purpose instead of faked.
+        </p>
+        <p>
+          <strong>The practice pack ships empty</strong>, which means the bench lens currently has nothing to
+          recommend on any codebase. That is the mechanism working as designed rather than a defect — an
+          entry only enters the pack after somebody here has implemented the technique and knows what it
+          cost — but it does mean the honest state today is a well-defended empty set. The demo below also
+          cannot show either of the two new lenses: it is a person-to-person chat application that calls no
+          model at all, and infraviz does not offer the AI section for services that have no model in them.
         </p>
       </div>
     </div>
